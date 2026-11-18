@@ -1,4 +1,4 @@
-KEY2 Remap 0.5（BlackBerry KEY2、Android 16、Magisk 31.1向け）
+KEY2 Remap 1.0（BlackBerry KEY2、Android 16、Magisk 31.1向け）
 
 1. Magiskアプリからこのモジュールをインストールし、再起動します。
 2. WebUI XでKEY2 Remapを開き、root権限とシェル権限を許可します。
