@@ -464,6 +464,12 @@
     return roles;
   }
 
+  /**
+   * Layer an assignment ID is counted and reset under. A modifier key role ("kl:SCAN") is the
+   * key's own output, not a modifier combination, so it belongs to the base layer.
+   */
+  function layerOf(id) { return id.startsWith('kl:') ? 'base' : id.split(':')[0]; }
+
   /** Pressable modifiers (see availableModifiers) given the physical modifier keys' ROLES. */
   function availableFromRoles(roles) { return availableModifiers(Object.values(roles).filter(Boolean)); }
 
@@ -561,6 +567,6 @@
     canonical, validValue, validId, validate, parseKcm, matchesMetaState, evaluate,
     availableModifiers, unreachableParts, pressStates, companions, ruleLayers, effectiveRows,
     warnings, parseStatus, diagnose, diffAssignments, PALETTE, shortName, legend, keyCodeOf, editableKeyOf,
-    PHYSICAL, LAYOUT, ROLE_MODIFIERS, ROLE_NOTICE, validRole, roleName, modifierLabel, rolesOf, availableFromRoles, roleWarnings,
+    PHYSICAL, LAYOUT, ROLE_MODIFIERS, ROLE_NOTICE, validRole, roleName, modifierLabel, rolesOf, layerOf, availableFromRoles, roleWarnings,
   };
 });

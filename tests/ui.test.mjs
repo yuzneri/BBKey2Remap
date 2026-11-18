@@ -178,6 +178,13 @@ test('modifier key roles: physical keys, allowed targets and assignment validati
   assert.throws(() => KCM.validate({ 'kl:54': 'SYM' }));
 });
 
+test('modifier key role changes are counted and reset with the base layer', () => {
+  assert.equal(KCM.layerOf('kl:110'), 'base');
+  assert.equal(KCM.layerOf('base:Q'), 'base');
+  assert.equal(KCM.layerOf('sym:H'), 'sym');
+  assert.equal(KCM.layerOf('shift+alt:Q'), 'shift+alt');
+});
+
 test('modifier key roles: the WebUI allows exactly the targets klpatch.awk accepts', () => {
   const kl = readFileSync(join(ROOT, 'tests/fixtures/key2-base.kl'), 'ascii');
   writeFileSync(join(work, 'base.kl'), kl);

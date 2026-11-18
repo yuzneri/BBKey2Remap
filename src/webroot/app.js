@@ -217,7 +217,7 @@ function renderTabs() {
   available = KCM.availableFromRoles(roles());
   markReachability();
   $('tabs').replaceChildren(...tabLayers().map((l) => {
-    const n = Object.keys(map).filter((id) => id.split(':')[0] === l).length;
+    const n = Object.keys(map).filter((id) => KCM.layerOf(id) === l).length;
     const b = button(layerName(l), () => setLayer(l), 'tab' + (l === current ? ' active' : ''));
     b.setAttribute('role', 'tab');
     if (n) b.append(el('span', { className: 'badge', textContent: String(n) }));
@@ -533,8 +533,10 @@ $('reset').onclick = () => {
 $('resetLayer').onclick = async () => {
   if (!await ask(`${layerName(current)}レイヤーの変更をすべてリセットしますか？`)) return;
   for (const id of Object.keys(map)) {
+    if (KCM.layerOf(id) !== current) continue;
     const [l, key] = id.split(':');
-    if (l === current) unassign(l, key);
+    if (l === 'kl') delete map[id];
+    else unassign(l, key);
   }
   changed('このレイヤーをリセットしました。');
 };
