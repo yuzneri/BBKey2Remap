@@ -1,0 +1,31 @@
+# Saved assignment strings and whether they are valid. Checked against both the WebUI
+# (kcm.js validId/validValue) and the generator (patch.awk), which must agree.
+accept|sym:H=R_DPAD_LEFT
+accept|base:Q=U_0071
+accept|shift+ctrl:A=R_MOVE_HOME
+accept|lshift+lalt:4=U_20AC
+accept|sym:DEL=NONE
+accept|sym:Z=F_F6
+accept|capslock+numlock+scrolllock:A=NONE
+accept|lshift+rshift+lalt+ralt+lctrl+rctrl+lmeta+rmeta+sym+fn:SPACE=R_TAB
+accept|alt:ENTER=U_FFFF
+reject|lalt+lshift:4=U_20AC
+reject|shift+lshift:H=NONE
+reject|sym+sym:H=NONE
+reject|base+shift:H=NONE
+reject|foo:H=NONE
+reject|SYM:H=NONE
+reject|sym:h=NONE
+reject|sym:TAB=NONE
+reject|sym:H=R_NOPE
+reject|sym:H=R_
+reject|sym:H=
+reject|sym:H=U_0000
+reject|sym:H=U_D800
+reject|sym:H=U_DFFF
+reject|sym:H=U_00e9
+reject|sym:H=U_00E
+reject|sym:H=X_TAB
+reject|sym:H=R_DPAD_LEFT=x
+reject|sym:H:x=NONE
+reject|:H=NONE

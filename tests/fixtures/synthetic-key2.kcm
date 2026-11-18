@@ -1,0 +1,43 @@
+# Small KEY2-like map with Alt rules lacking lalt. Written for this project; not a device file.
+type ALPHA
+
+key A {
+    label:                              'A'
+    base:                               'a'
+    shift, capslock:                    'A'
+    alt:                                '-'
+    sym:                                '\u00E4'
+}
+
+key H {
+    label:                              'H'
+    base:                               'h'
+    shift, capslock:                    'H'
+    alt:                                '/'
+    sym:                                '\\'
+}
+
+key Q {
+    label:                              'Q'
+    base:                               'q'
+    shift, capslock:                    'Q'
+    alt:                                '1'   # trailing comment
+    sym:                                '^'
+}
+
+key 4 {
+    label:                              '$'
+    base, alt, sym:                     '$'
+    shift:                              '\u00A3'
+    lalt+lshift:                        '\uE141'
+}
+
+key 0 {
+    label:                              '0'
+    base, shift, alt:                   '0'
+}
+
+key SPACE {
+    label:                              ' '
+    base, shift, alt:                   ' '
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'">
+<title>KEY2 Remap</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+<header>
+<small>BLACKBERRY KEY2 · MAGISK · V0.5</small>
+<h1>キーリマップ</h1>
+<p>レイヤー（一緒に押す修飾キー）とキーを選び、パレットから出力を選びます。</p>
+</header>
+<div id="status" role="status">接続中…</div>
+<fieldset id="editor" disabled>
+<section>
+<div id="tabs" class="tabs" role="tablist"></div>
+<details id="advanced">
+<summary>組み合わせや左右を指定する</summary>
+<div id="mods" class="mods"></div>
+<div id="extra" class="toolbar"></div>
+</details>
+<p id="layerHint" class="hint"></p>
+<div id="keyboard" tabindex="-1"></div>
+<div class="toolbar"><button id="pickSource" type="button">キーを押して選ぶ</button></div>
+</section>
+<section id="panel">
+<h2 id="target"></h2>
+<p id="current"></p>
+<ul id="warnings"></ul>
+<div class="toolbar">
+<button id="reset" type="button">リセット</button>
+<button id="pickTarget" type="button">押したキーを割り当てる</button>
+<label id="fallbackBox" class="check"><input id="fallback" type="checkbox">フォールバックとして割り当てる</label>
+</div>
+<div id="cats" class="tabs"></div>
+<div id="palette" class="palette"></div>
+<details id="allCombos">
+<summary>このキーの全組み合わせの出力</summary>
+<div id="effective"></div>
+</details>
+</section>
+<section>
+<h2>変更一覧</h2>
+<table id="changes"></table>
+<div class="toolbar">
+<button id="resetLayer" type="button">このレイヤーをリセット</button>
+<button id="resetAll" type="button">すべてリセット</button>
+</div>
+<details>
+<summary>バックアップ（JSON）</summary>
+<textarea id="backup" rows="5" spellcheck="false"></textarea>
+<div class="toolbar">
+<button id="export" type="button">設定を書き出す</button>
+<button id="import" type="button">設定を読み込む</button>
+</div>
+</details>
+</section>
+<section>
+<h2>診断</h2>
+<ul id="diagnostics"></ul>
+<button id="recheck" type="button">再確認</button>
+</section>
+<section>
+<h2>キー入力テスト</h2>
+<p class="hint">下の枠を押してからキーを押すと、この画面に届いたキーの情報を表示します。保存した設定を再起動後に確かめる目安です。IMEやほかのアプリでの動きまでは確かめられません。</p>
+<div id="keytest" class="keytest" tabindex="0" role="button">ここを押してからキーを押す</div>
+<pre id="keylog"></pre>
+</section>
+<footer>
+<button id="save" type="button">保存（再起動後に反映）</button>
+<p>保存後に再起動するか確認します。モジュールを無効化して再起動すると、導入前の状態に戻ります。</p>
+</footer>
+</fieldset>
+</main>
+<dialog id="confirm">
+<form method="dialog">
+<p id="confirmText"></p>
+<div class="toolbar">
+<button value="cancel">キャンセル</button>
+<button value="ok">OK</button>
+</div>
+</form>
+</dialog>
+<script src="kcm.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

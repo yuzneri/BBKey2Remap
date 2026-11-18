@@ -1,0 +1,80 @@
+:root{color-scheme:light dark;font:16px system-ui,sans-serif;--line:#8885;--accent:#3465a4;--soft:#3465a425;--warn:#c46a00}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:680px;margin:auto;padding:20px 12px 36px}
+h1{font-size:27px;margin:8px 0}
+h2{font-size:18px;margin:8px 0}
+p{line-height:1.55;font-size:14px}
+small{letter-spacing:1.3px;color:#888}
+section{border-top:1px solid var(--line);margin-top:18px;padding-top:8px}
+fieldset{border:0;margin:0;padding:0;min-width:0}
+fieldset:disabled{opacity:.65}
+button,select,input,textarea{font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:9px}
+button,select{padding:10px}
+button:disabled{opacity:.45}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px;align-items:center}
+.hint{color:gray;font-size:13px}
+#status{padding:12px;border:1px solid var(--line);border-radius:9px;white-space:pre-wrap;font-size:14px}
+#save{width:100%;background:var(--accent);color:#fff;font-weight:bold}
+footer{margin-top:24px}
+footer p{color:#888}
+.check{display:flex;align-items:center;gap:6px;font-size:13px}
+.unavailable{opacity:.5}
+[hidden]{display:none!important}
+
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.tab{flex:none;padding:8px 12px;border-radius:999px;position:relative}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.badge{display:inline-block;min-width:18px;margin-left:6px;padding:0 5px;border-radius:9px;background:var(--warn);color:#fff;font-size:11px;line-height:18px}
+details{margin:6px 0}
+summary{cursor:pointer;font-size:14px;padding:4px 0}
+.mods{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mods label{display:grid;gap:4px;font-size:13px}
+.mods select{width:100%}
+#extra label{font-size:13px;display:flex;align-items:center;gap:3px}
+
+.keyline{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;margin:3px 0}
+.key{min-width:0;padding:3px 1px 5px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:52px;position:relative}
+.key small{font-size:9px;letter-spacing:0;color:#888;max-width:100%;overflow:hidden;white-space:nowrap}
+.key span{font-size:17px;line-height:1.2;max-width:100%;overflow:hidden;white-space:nowrap}
+.key.replace span{font-size:13px;font-weight:600;color:var(--accent)}
+.key.none span,.key.undefined span{color:#888}
+.key.changed{background:var(--soft)}
+.key.assigned::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
+.key.selected{outline:3px solid #4789df;outline-offset:-1px}
+.key.space{grid-column:span 4}
+.key.mod{background:#8882}
+.key.mod span{font-size:13px;font-weight:600}
+.key.mod.held{background:var(--accent);color:#fff}
+.key.mod.held small{color:#fffc}
+#pickSource.active,#pickTarget.active{outline:2px solid var(--warn)}
+
+#panel h2{font-size:20px}
+#current{margin:4px 0}
+#warnings{margin:0 0 6px;padding-left:20px;font-size:13px;color:var(--warn)}
+.palette{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:8px 0}
+.pal{padding:12px 4px;font-size:15px}
+.pal.active{background:var(--accent);border-color:var(--accent);color:#fff;outline:0}
+.palette>.wide,.palette>.charrow{grid-column:1/-1}
+.charrow{display:flex;gap:8px}
+.charrow input{flex:1;min-width:0;padding:10px}
+
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top;white-space:pre-wrap}
+#changes tr{cursor:pointer}
+#changes .remove{padding:4px 10px}
+#effective th{width:38%}
+#effective tr{cursor:pointer}
+#effective tr.changed td{background:var(--soft)}
+#effective tr.current th{outline:2px solid #4789df;outline-offset:-2px}
+
+#backup{width:100%;padding:9px;margin:6px 0}
+.keytest{padding:18px 9px;margin:6px 0;border:1px dashed var(--line);border-radius:8px;text-align:center;color:gray;font-size:14px}
+.keytest:focus{outline:2px solid #4789df;color:inherit}
+textarea{resize:vertical}
+pre{max-height:250px;overflow:auto;font-size:12px;white-space:pre-wrap}
+#diagnostics{padding-left:20px;font-size:13px}
+#diagnostics .warn{color:var(--warn);font-weight:600}
+dialog{max-width:min(90vw,420px);border:1px solid var(--line);border-radius:12px;color:inherit;background:Canvas}
+dialog::backdrop{background:#0006}
+#confirmText{white-space:pre-wrap;max-height:60vh;overflow:auto}

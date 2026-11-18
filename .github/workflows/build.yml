@@ -1,0 +1,39 @@
+name: Build module ZIP
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create a release on tag pushes
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build ZIP
+        id: zip
+        run: |
+          version=$(sed -n 's/^version=//p' src/module.prop)
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match version=${version} in src/module.prop"
+            exit 1
+          fi
+          sh tools/build-zip.sh
+          echo "path=dist/key2_remap_gui-${version}.zip" >> "$GITHUB_OUTPUT"
+
+      # archive: false uploads the module ZIP itself instead of a ZIP wrapping it.
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.zip.outputs.path }}
+          archive: false
+
+      - name: Create release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" "${{ steps.zip.outputs.path }}" --title "${GITHUB_REF_NAME}" --generate-notes
