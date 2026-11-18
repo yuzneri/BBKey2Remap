@@ -23,8 +23,9 @@ let available = KCM.availableModifiers(['SHIFT_LEFT', 'SHIFT_RIGHT', 'ALT_LEFT',
 let klBase = {};
 let klLive = {};
 let klEditable = false;
-let current = 'sym';
-let selected = 'H';
+let current = 'base';
+// Character key being edited; null with selectedMod also null until a key is chosen.
+let selected = null;
 // Scan code of the physical modifier key being edited, or null while a character key is selected.
 let selectedMod = null;
 let category = 'cursor';
@@ -317,7 +318,9 @@ function assignRole(scan, code) {
 }
 
 function renderPanel() {
+  $('panel').hidden = selectedMod === null && selected === null;
   if (selectedMod !== null) { renderRolePanel(selectedMod); return; }
+  if (selected === null) return;
   $('fallbackBox').hidden = false;
   $('allCombos').hidden = false;
   if (!CATEGORIES.some((c) => c.id === category)) category = 'cursor';
