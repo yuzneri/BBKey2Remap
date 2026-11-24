@@ -30,12 +30,15 @@ static bool any_bound(const struct tg_state *st, int fingers, int first, int las
     return false;
 }
 
-/* Sends the gesture's key if it has one; returns whether it did. */
+/* Sends the gesture's key, with the physical modifiers held, if it has one; returns whether it did. */
 static bool emit(struct tg_state *st, enum tg_gesture g)
 {
-    const struct tg_binding *b = &st->cfg.bind[st->fingers - 1][g];
-    if (b->scancode) st->sink.key(st->sink.ctx, st->now, st->fingers, g, b);
-    return b->scancode;
+    struct tg_binding b = st->cfg.bind[st->fingers - 1][g];
+    if (!b.scancode) return false;
+    for (int i = 0; i < st->cfg.nmods; i++)
+        if (st->mods_down & (1u << i)) b.mods |= st->cfg.mods[i].mod;
+    st->sink.key(st->sink.ctx, st->now, st->fingers, g, &b);
+    return true;
 }
 
 static double start_units(const struct tg_state *st) { return st->cfg.start_mm * st->units_per_mm; }
@@ -324,18 +327,23 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
     }
 }
 
-static bool is_modifier(const struct tg_state *st, int scancode)
+/* The index of scancode in cfg.mods, or -1 for a key that is not a modifier. */
+static int modifier_index(const struct tg_state *st, int scancode)
 {
     for (int i = 0; i < st->cfg.nmods; i++)
-        if (st->cfg.mods[i].scancode == scancode) return true;
-    return false;
+        if (st->cfg.mods[i].scancode == scancode) return i;
+    return -1;
 }
 
 void tg_key_event(struct tg_state *st, const struct tg_event *ev)
 {
     tg_advance(st, ev->t_us);
-    if (ev->type != EV_KEY || ev->value != 1) return; /* releases and autorepeat change nothing */
-    bool modifier = is_modifier(st, ev->code);
+    if (ev->type != EV_KEY) return;
+    int mod = modifier_index(st, ev->code);
+    if (mod >= 0 && ev->value == 1) st->mods_down |= 1u << mod;
+    if (mod >= 0 && ev->value == 0) st->mods_down &= ~(1u << mod);
+    if (ev->value != 1) return; /* releases and autorepeat change nothing else */
+    bool modifier = mod >= 0;
     for (int s = 0; s < TG_SLOTS; s++)
         if (st->c[s].active) st->c[s].on_key = true;
     if (st->phase == TG_PASS) {

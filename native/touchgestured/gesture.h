@@ -25,7 +25,10 @@ struct tg_event {
 
 struct tg_sink {
     void *ctx;
-    /* A recognised gesture with a binding; called once per key to send. */
+    /*
+     * A recognised gesture with a binding; called once per key to send. b->mods also holds the
+     * physical modifiers held on the keyboard, which do not carry over to another device.
+     */
     void (*key)(void *ctx, int64_t t_us, int fingers, enum tg_gesture g, const struct tg_binding *b);
     /* An event for the virtual touchpad of a passed-through touch; t_us is its original time. */
     void (*pass)(void *ctx, const struct tg_event *ev);
@@ -65,6 +68,7 @@ struct tg_state {
     bool buf_overflow;
     bool dropping;           /* after SYN_DROPPED, until the next SYN_REPORT */
     int64_t last_key_us;     /* last press of a key other than a modifier */
+    uint32_t mods_down;      /* bit i: the physical key cfg.mods[i] is held */
 };
 
 /* Starts with no fingers down. units_per_mm is the resolution of the X and Y axes. */

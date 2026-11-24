@@ -316,7 +316,7 @@ replays_keys() {
     [ "$got" = "$(printf "$4")" ] || { printf 'got:\n%s\n' "$got"; return 1; }
 }
 
-MODS='mod 42 shift\nmod 29 ctrl\n'
+MODS='mod 42 shift\nmod 54 shift\nmod 29 ctrl\n'
 check 'a touch starting within after_key_ms of a key press is ignored' replays_keys "$MODS$TAPS" \
     '100 0=500,200\n150 -0\n400 0=500,200\n450 -0\n' '0 KEY_H DOWN\n50 KEY_H UP\n' '450 1-finger tap key 0x1\n'
 check 'autorepeat is not a new key press' replays_keys "$MODS$TAPS" \
@@ -325,14 +325,28 @@ check 'pressing a modifier key does not make later touches ignored' replays_keys
     '100 0=500,200\n150 -0\n' '0 KEY_LEFTSHIFT DOWN\n20 KEY_LEFTSHIFT UP\n' '150 1-finger tap key 0x1\n'
 check 'a key pressed during a touch cancels it' replays_keys "$MODS$TAPS" \
     '0 0=500,200\n100 -0\n' '50 KEY_H DOWN\n70 KEY_H UP\n' ''
-check 'a finger already on the surface when a modifier is pressed leaves the gesture' replays_keys "$MODS$SWIPES" \
+check 'holding Shift with one finger and swiping with another sends shifted keys' replays_keys "$MODS$SWIPES" \
     "0 0=900,300\n$(stroke 300 800 100,200 310,200 1)800 -1\n900 -0\n" '30 KEY_LEFTSHIFT DOWN\n850 KEY_LEFTSHIFT UP\n' \
-    '400 1-finger swipe right key 0x4\n550 1-finger swipe right key 0x4\n700 1-finger swipe right key 0x4\n'
+    '400 1-finger swipe right key 0x4 shift\n550 1-finger swipe right key 0x4 shift\n700 1-finger swipe right key 0x4 shift\n'
 check 'lifting the finger on a modifier does not end the new gesture' replays_keys "$MODS${SWIPES}bind 2 tap key 2\n" \
     "0 0=900,300\n$(stroke 300 800 100,200 310,200 1 | sed 's/\\n320 /\\n320 -0 /')800 -1\n" '30 KEY_LEFTSHIFT DOWN\n310 KEY_LEFTSHIFT UP\n' \
     '450 1-finger swipe right key 0x4\n550 1-finger swipe right key 0x4\n700 1-finger swipe right key 0x4\n'
 check 'a modifier pressed after swipe keys were sent ends that swipe' replays_keys "$MODS$SWIPES" \
     "$(stroke 0 500 100,200 310,200)500 -0\n" '200 KEY_LEFTCTRL DOWN\n' '100 1-finger swipe right key 0x4\n'
+# Physical modifiers held on the keyboard are added to the keys sent (PR0: they do not carry over
+# from the physical keyboard to the virtual one by themselves).
+check 'a physical modifier held during a gesture is added to its key' replays_keys "$MODS$SWIPES" \
+    "$(stroke 10 110 100,200 163,200)110 -0\n" '0 KEY_LEFTSHIFT DOWN\n200 KEY_LEFTSHIFT UP\n' '80 1-finger swipe right key 0x4 shift\n'
+check 'physical modifiers combine with the modifiers of the binding' replays_keys "${MODS}bind 1 swipe right key 4 ctrl\n" \
+    "$(stroke 10 110 100,200 163,200)110 -0\n" '0 KEY_LEFTSHIFT DOWN\n' '80 1-finger swipe right key 0x4 ctrl+shift\n'
+check 'a released physical modifier is no longer added' replays_keys "$MODS$SWIPES" \
+    "$(stroke 500 600 100,200 163,200)600 -0\n" '0 KEY_LEFTSHIFT DOWN\n100 KEY_LEFTSHIFT UP\n' '570 1-finger swipe right key 0x4\n'
+check 'a modifier stays held while another key for it is down' replays_keys "$MODS$SWIPES" \
+    "$(stroke 500 600 100,200 163,200)600 -0\n" '0 KEY_LEFTSHIFT DOWN\n10 KEY_RIGHTSHIFT DOWN\n100 KEY_LEFTSHIFT UP\n' \
+    '570 1-finger swipe right key 0x4 shift\n'
+check 'keys not listed as modifiers add nothing' replays_keys "$MODS$SWIPES" \
+    "$(stroke 500 600 100,200 163,200)600 -0\n" '0 KEY_LEFTALT DOWN\n' '570 1-finger swipe right key 0x4\n'
+
 conf "pass 1\n$MODS"
 { touches '0 0=500,200\n20 0=510,200\n60 0=530,200\n100 -0\n'; keys '50 KEY_H DOWN\n'; } | sort -s -t']' -k1,1 > "$WORK/k.log"
 { printf '50 pass EV_ABS ABS_MT_SLOT 00000000\n50 pass EV_ABS ABS_MT_TRACKING_ID ffffffff\n'
