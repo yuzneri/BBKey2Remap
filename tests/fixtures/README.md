@@ -10,6 +10,8 @@ All files here were written for this project. None is a copy of a device file.
 | `synthetic-key2.kcm` | A small KEY2-like map whose Alt rules have no `lalt`. | `8721a519…f4a6` |
 | `touch-swipes-1finger.getevent` | `getevent -lt` of the keyboard surface (`touch_keypad`), recorded on a KEY2 for this project: three one-finger swipes. | `afb08918…d021` |
 | `touch-2-and-3-fingers.getevent` | The same kind of recording: a two-finger swipe up, then three fingers landing 0, 42 and 122 ms apart. | `b128fe9b…51d8` |
+| `touch-flicks-and-swipes.getevent` | The same kind of recording: twelve flicks (up, down, left, right, three times; one came out as a still touch), four slow swipes and four swipes of hesitant speed. | `f29db6ae…11c8` |
+| `typing-and-shift-swipe.getevent` | `getevent -lt` of the keyboard surface (`/dev/input/event1`) and the keys (`/dev/input/event2`) together: five letters typed, then a swipe right with Shift held. | `7a360baa…e248` |
 
 ## What follows the device and what does not
 

@@ -25,7 +25,7 @@ void tg_config_defaults(struct tg_config *cfg)
     memset(cfg, 0, sizeof *cfg);
     cfg->start_mm = 2;
     cfg->step_mm = 3;
-    cfg->flick_mm_s = 150;
+    cfg->flick_mm_s = 60;
     cfg->tap_ms = 200;
     cfg->hold_ms = 0;
     cfg->gather_ms = 150;

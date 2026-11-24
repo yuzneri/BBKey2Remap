@@ -30,7 +30,7 @@ struct tg_binding {
 struct tg_config {
     double start_mm;      /* movement before a touch counts as a swipe */
     double step_mm;       /* movement per key of a continuous swipe */
-    double flick_mm_s;    /* speed at the end of a touch that makes it a flick */
+    double flick_mm_s;    /* speed since the fingers started moving that makes a touch a flick */
     int tap_ms;           /* longest touch that counts as a tap */
     int hold_ms;          /* no key is sent before a touch is this old */
     int gather_ms;        /* fingers landing this soon after the first one join the gesture */

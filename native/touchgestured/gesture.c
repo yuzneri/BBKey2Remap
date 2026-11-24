@@ -7,8 +7,9 @@
 #include <string.h>
 
 #define MS(v) ((int64_t)(v) * 1000)
+/* A moving finger reports a frame about every 8 ms; one silent this long has stopped. */
+#define STILL_US MS(50)
 /* Speed is measured over this much of the latest movement. */
-#define SPEED_WINDOW_US MS(50)
 #define PI 3.14159265358979323846
 
 void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_mm, const struct tg_sink *sink)
@@ -46,31 +47,18 @@ static double start_units(const struct tg_state *st) { return st->cfg.start_mm *
 static bool swipes_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_SWIPE_UP, TG_SWIPE_RIGHT); }
 static bool flicks_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_FLICK_UP, TG_FLICK_DOWN_RIGHT); }
 
-static void record(struct tg_state *st)
-{
-    st->hist[st->hist_next].t = st->now;
-    st->hist[st->hist_next].x = st->ax;
-    st->hist[st->hist_next].y = st->ay;
-    st->hist_next = (st->hist_next + 1) % TG_HISTORY;
-    if (st->hist_len < TG_HISTORY) st->hist_len++;
-}
-
 /*
- * Speed in mm/s over the last SPEED_WINDOW_US: from the newest frame at least that old (or the
- * oldest one kept, for a younger touch) to the current position. A finger that stopped reports
- * no frames, so its speed falls to 0 one window after its last frame.
+ * Speed in mm/s since the fingers started to move (left half of start_mm behind): the distance over
+ * that time. In flicks and swipes recorded on the device, the speed just before the lift does not
+ * tell them apart (the finger slows while it leaves the surface), and neither does the speed from
+ * the landing, since a flick may rest a while before it starts. This one does, already when the
+ * swipe would start: 60 mm/s splits all 11 recorded flicks from all 8 swipes.
  */
 static double speed(const struct tg_state *st)
 {
-    int ref = (st->hist_next - st->hist_len + TG_HISTORY) % TG_HISTORY;
-    for (int i = 0; i < st->hist_len; i++) {
-        int k = (st->hist_next - 1 - i + TG_HISTORY) % TG_HISTORY;
-        if (st->hist[k].t <= st->now - SPEED_WINDOW_US) { ref = k; break; }
-    }
-    int64_t elapsed = st->now - st->hist[ref].t;
-    if (elapsed <= 0) return 0;
-    double d = hypot(st->ax - st->hist[ref].x, st->ay - st->hist[ref].y);
-    return d / st->units_per_mm / ((double)elapsed / 1e6);
+    int64_t moving = st->now - st->t_move;
+    if (moving <= 0) return 0;
+    return hypot(st->ax, st->ay) / st->units_per_mm / ((double)moving / 1e6);
 }
 
 static bool may_be_flick(const struct tg_state *st)
@@ -196,9 +184,9 @@ static void begin_touch(struct tg_state *st, int active)
     st->t0 = st->now;
     st->ax = st->ay = 0;
     st->max_d2 = 0;
+    st->t_move = st->now;
     st->max_active = active;
     st->fingers = 0;
-    st->hist_len = st->hist_next = 0;
     st->swiping = st->committed = false;
     st->pending = 0;
     if (st->now - st->last_key_us < MS(st->cfg.after_key_ms)) st->phase = TG_DONE;
@@ -227,7 +215,9 @@ static void accumulate(struct tg_state *st)
     }
     double d2 = st->ax * st->ax + st->ay * st->ay;
     if (d2 > st->max_d2) st->max_d2 = d2;
-    record(st);
+    double onset = start_units(st) / 2;
+    if (d2 < onset * onset) st->t_move = st->now;
+    st->t_frame = st->now;
 }
 
 static void end_frame(struct tg_state *st)
@@ -399,8 +389,15 @@ int64_t tg_next_deadline(const struct tg_state *st)
     if (st->phase != TG_TRACK || !swipes_bound(st)) return INT64_MAX;
     /* A finger held still past hold_ms may already have moved far enough to start a swipe. */
     if (!st->swiping && st->now < st->t0 + MS(st->cfg.hold_ms)) return st->t0 + MS(st->cfg.hold_ms);
-    /* Held-back steps are sent once the speed has fallen, which a still finger never reports. */
-    if (st->pending) return st->hist[(st->hist_next - 1 + TG_HISTORY) % TG_HISTORY].t + SPEED_WINDOW_US;
+    /* Held-back steps are sent once the speed has fallen, which a still finger never reports. The
+     * finger counts as still only after STILL_US without frames, since the speed taken between two
+     * frames of a moving finger would be too low; without further movement it then falls below
+     * flick_mm_s at the second time at the latest. */
+    if (st->pending) {
+        double mm = hypot(st->ax, st->ay) / st->units_per_mm;
+        int64_t slow = st->t_move + (int64_t)(mm / st->cfg.flick_mm_s * 1e6) + 1;
+        return st->t_frame + STILL_US > slow ? st->t_frame + STILL_US : slow;
+    }
     return INT64_MAX;
 }
 

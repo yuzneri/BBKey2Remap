@@ -20,18 +20,18 @@ rejects() {
     case $err in *"$2"*) ;; *) printf 'error: %s\n' "$err"; return 1;; esac
 }
 
-DEFAULTS='start_mm 2\nstep_mm 3\nflick_mm_s 150\ntap_ms 200\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
+DEFAULTS='start_mm 2\nstep_mm 3\nflick_mm_s 60\ntap_ms 200\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
 
 check 'an empty settings file gives the default thresholds and no gestures' accepts '' "$DEFAULTS"
 check 'comments, blank lines and tabs are ignored' accepts '# c\n\n\tstart_mm\t2.5  \n' \
-    'start_mm 2.5\nstep_mm 3\nflick_mm_s 150\ntap_ms 200\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
+    'start_mm 2.5\nstep_mm 3\nflick_mm_s 60\ntap_ms 200\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
 check 'every kind of line is read' accepts \
     'step_mm 4\nflick_mm_s 300\ntap_ms 150\nhold_ms 40\ngather_ms 120\nafter_key_ms 500\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 flick down-right key 261\nbind 2 tap key 0x102 meta\npass 3\nmod 42 shift\nmod 0x1d ctrl\n' \
     'start_mm 2\nstep_mm 4\nflick_mm_s 300\ntap_ms 150\nhold_ms 40\ngather_ms 120\nafter_key_ms 500\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 flick down-right key 0x105\nbind 2 tap key 0x102 meta\npass 3\nmod 42 shift\nmod 29 ctrl\n'
 check 'modifiers may be listed in any order' accepts 'bind 1 tap key 1 meta+alt+shift+ctrl\n' \
     "${DEFAULTS}bind 1 tap key 0x1 ctrl+shift+alt+meta\n"
 check 'a file without a final newline is read' accepts 'tap_ms 100' \
-    'start_mm 2\nstep_mm 3\nflick_mm_s 150\ntap_ms 100\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
+    'start_mm 2\nstep_mm 3\nflick_mm_s 60\ntap_ms 100\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
 
 check 'unknown settings are rejected with their line number' rejects '# c\nspeed 3\n' '2: unknown setting "speed"'
 check 'a threshold set twice is rejected' rejects 'tap_ms 100\ntap_ms 200\n' 'tap_ms is set twice'
@@ -197,8 +197,11 @@ check 'with swipes and flicks bound, a fast flick sends only the flick' replays 
     "$(stroke 0 40 100,200 310,200)40 -0\n" '40 1-finger flick right key 0x14\n'
 check 'with swipes and flicks bound, a slow swipe sends only swipe keys' replays "$BOTH" \
     "$(stroke 0 500 100,200 310,200)500 -0\n" '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
+# 10 mm since it started moving falls below 60 mm/s at 167 ms (and the finger is silent by then).
 check 'held-back swipe keys are sent once a fast finger stops' replays "$BOTH" \
-    "$(stroke 0 40 100,200 310,200)300 -0\n" '90 1-finger swipe right key 0x4\n90 1-finger swipe right key 0x4\n90 1-finger swipe right key 0x4\n'
+    "$(stroke 0 40 100,200 310,200)300 -0\n" '166 1-finger swipe right key 0x4\n166 1-finger swipe right key 0x4\n166 1-finger swipe right key 0x4\n'
+check 'a fast finger between two frames is not taken for a still one' replays "$BOTH" \
+    '0 0=100,200\n30 0=100,222\n36 0=100,255\n47 0=100,297\n53 0=100,345\n64 0=100,378\n90 -0\n' '90 1-finger flick down key 0x12\n'
 check 'after its first swipe key a touch is no longer a flick' replays "$BOTH" \
     "$(stroke 0 500 100,200 310,200)$(stroke 510 540 310,200 520,200)540 -0\n" \
     '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n520 1-finger swipe right key 0x4\n530 1-finger swipe right key 0x4\n540 1-finger swipe right key 0x4\n540 1-finger swipe right key 0x4\n'
@@ -226,10 +229,33 @@ gestures() {
     got=$("$GESTURETOOL" replay "$WORK/g.conf" "$2" | cut -d' ' -f2-4) || return 1
     [ "$got" = "$(printf "$3")" ] || { printf 'got:\n%s\n' "$got"; return 1; }
 }
-# With the default thresholds: an up-and-down swipe, a 7 mm swipe left and a 15 mm swipe right.
+# With the default thresholds: an up-and-down swipe, a 7 mm swipe left, and 15 mm right in 163 ms,
+# as fast as the recorded flicks below.
 check 'device recording: one-finger swipes with the default thresholds' gestures "$BOTH" \
     "$FIXTURES/touch-swipes-1finger.getevent" \
-    "$(printf '1-finger swipe up\n%.0s' 1 2)\n$(printf '1-finger swipe down\n%.0s' 1 2)\n$(printf '1-finger swipe left\n%.0s' 1 2)\n$(printf '1-finger swipe right\n%.0s' 1 2 3 4 5)\n"
+    "$(printf '1-finger swipe up\n%.0s' 1 2)\n$(printf '1-finger swipe down\n%.0s' 1 2)\n$(printf '1-finger swipe left\n%.0s' 1 2)\n1-finger flick right\n"
+# Recorded as 12 flicks (up, down, left, right, three times; one came out as a still touch), 4 slow
+# swipes and 4 swipes of hesitant speed. With both bound, each flick must be a flick in its
+# direction and nothing else may be one.
+flicks_and_swipes() {
+    conf "$BOTH"
+    # The first key of each touch (touches are over 300 ms apart), as "KIND DIRECTION".
+    "$GESTURETOOL" replay "$WORK/g.conf" "$FIXTURES/touch-flicks-and-swipes.getevent" |
+        awk 'NR == 1 || $1 - last > 300 { print $3, $4 } { last = $1 }' > "$WORK/kinds"
+    [ "$(tr '\n' ' ' < "$WORK/kinds")" = 'flick up flick down flick left flick right flick up flick down flick left flick right flick down flick left flick right swipe up swipe down swipe left swipe right swipe left swipe left swipe up swipe up ' ] ||
+        { cat "$WORK/kinds"; return 1; }
+}
+check 'device recording: recorded flicks and swipes are told apart with the default thresholds' flicks_and_swipes
+# Typing: the finger on each key touches the surface 0.3-0.5 s before the key goes down and keeps
+# sliding over several keys; then Shift is held (its finger is not on the surface) for a swipe right.
+typing_and_shift() {
+    conf "mod 42 shift\nmod 54 shift\nmod 29 ctrl\n$SWIPES"
+    "$GESTURETOOL" replay "$WORK/g.conf" "$FIXTURES/typing-and-shift-swipe.getevent" | cut -d' ' -f2- | uniq -c > "$WORK/out"
+    [ "$(tr -s ' ' < "$WORK/out")" = ' 7 1-finger swipe right key 0x4 shift' ] || { cat "$WORK/out"; return 1; }
+    grep /dev/input/event1 "$FIXTURES/typing-and-shift-swipe.getevent" > "$WORK/touch-only.log"
+    "$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch-only.log" | grep -q 'swipe left'
+}
+check 'device recording: typing sends no gesture keys (it would without the keyboard), Shift+swipe sends shifted keys' typing_and_shift
 check 'device recording: a 5.5 mm two-finger swipe up with the default thresholds' gestures \
     'bind 2 swipe up key 1\nbind 2 swipe down key 2\nbind 3 tap key 3\n' "$FIXTURES/touch-2-and-3-fingers.getevent" \
     '2-finger swipe up\n2-finger swipe up\n'

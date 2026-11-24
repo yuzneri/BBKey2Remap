@@ -13,7 +13,6 @@
 #include <stdint.h>
 
 #define TG_SLOTS 16
-#define TG_HISTORY 32
 /* Events kept until the finger count is known: 500 ms of 3 fingers at 120 Hz is about 800. */
 #define TG_PASS_BUFFER 1024
 
@@ -56,8 +55,8 @@ struct tg_state {
     int fingers, max_active;
     double ax, ay;   /* accumulated movement of the counted fingers, device units */
     double max_d2;   /* largest squared distance from the starting point so far */
-    struct { int64_t t; double x, y; } hist[TG_HISTORY]; /* (ax, ay) per frame, a ring */
-    int hist_len, hist_next;
+    int64_t t_move;  /* when the fingers last were within half of start_mm of where they landed */
+    int64_t t_frame; /* the latest frame of the touch */
     /* continuous swipe */
     bool swiping, committed; /* committed: swipe keys were sent, so it can no longer be a flick */
     int axis;                /* 0: X, 1: Y */
