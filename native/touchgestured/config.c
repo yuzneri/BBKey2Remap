@@ -81,6 +81,12 @@ static bool parse_code(const char *s, long hi, long *out)
     return true;
 }
 
+/* A passthrough finger count goes to the ROM before any gesture of it could be recognised. */
+static int pass_conflict(struct parser *p, int fingers)
+{
+    return fail(p, "%d-finger gestures are both passed through and bound", fingers);
+}
+
 static int parse_fingers(struct parser *p, const char *s)
 {
     if (s && s[0] >= '1' && s[0] <= '0' + TG_MAX_FINGERS && !s[1]) return s[0] - '0';
@@ -156,6 +162,7 @@ static int parse_bind(struct parser *p, char **tok, int ntok)
         return fail(p, "modifiers must be ctrl, shift, alt and meta joined by +");
     struct tg_binding *b = &p->cfg->bind[fingers - 1][g];
     if (b->scancode) return fail(p, "%d-finger %s is bound twice", fingers, name);
+    if (p->cfg->pass[fingers - 1]) return pass_conflict(p, fingers);
     b->scancode = (uint16_t)code;
     b->mods = mods;
     return 0;
@@ -179,13 +186,15 @@ static int parse_mod(struct parser *p, char **tok, int ntok)
 
 static int parse_line(struct parser *p, char *line)
 {
+    line += strspn(line, " \t");
+    if (*line == '#') return 0;
     char *tok[8];
     int ntok = 0;
     for (char *save, *t = strtok_r(line, " \t", &save); t; t = strtok_r(NULL, " \t", &save)) {
         if (ntok == 8) return fail(p, "too many words");
         tok[ntok++] = t;
     }
-    if (!ntok || tok[0][0] == '#') return 0;
+    if (!ntok) return 0;
     for (size_t i = 0; i < sizeof THRESHOLDS / sizeof *THRESHOLDS; i++)
         if (!strcmp(tok[0], THRESHOLDS[i].name)) return parse_threshold(p, (int)i, tok, ntok);
     if (!strcmp(tok[0], "bind")) return parse_bind(p, tok, ntok);
@@ -194,6 +203,8 @@ static int parse_line(struct parser *p, char *line)
         int fingers = parse_fingers(p, ntok == 2 ? tok[1] : NULL);
         if (fingers < 0) return -1;
         if (p->cfg->pass[fingers - 1]) return fail(p, "pass %d is set twice", fingers);
+        for (int g = 0; g < TG_GESTURE_COUNT; g++)
+            if (p->cfg->bind[fingers - 1][g].scancode) return pass_conflict(p, fingers);
         p->cfg->pass[fingers - 1] = true;
         return 0;
     }
@@ -213,14 +224,5 @@ int tg_config_load(struct tg_config *cfg, FILE *in, char *err, size_t errlen)
         if (parse_line(&p, line)) return -1;
     }
     if (ferror(in)) return fail(&p, "read error");
-    /* A passthrough finger count goes to the ROM before any gesture of it could be recognised. */
-    for (int f = 0; f < TG_MAX_FINGERS; f++) {
-        if (!cfg->pass[f]) continue;
-        for (int g = 0; g < TG_GESTURE_COUNT; g++)
-            if (cfg->bind[f][g].scancode) {
-                snprintf(err, errlen, "%d-finger gestures are both passed through and bound", f + 1);
-                return -1;
-            }
-    }
     return 0;
 }

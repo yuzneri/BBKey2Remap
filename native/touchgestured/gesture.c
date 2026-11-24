@@ -30,10 +30,12 @@ static bool any_bound(const struct tg_state *st, int fingers, int first, int las
     return false;
 }
 
-static void emit(struct tg_state *st, enum tg_gesture g)
+/* Sends the gesture's key if it has one; returns whether it did. */
+static bool emit(struct tg_state *st, enum tg_gesture g)
 {
     const struct tg_binding *b = &st->cfg.bind[st->fingers - 1][g];
     if (b->scancode) st->sink.key(st->sink.ctx, st->now, st->fingers, g, b);
+    return b->scancode;
 }
 
 static double start_units(const struct tg_state *st) { return st->cfg.start_mm * st->units_per_mm; }
@@ -77,9 +79,9 @@ static void send_pending(struct tg_state *st)
 {
     enum tg_gesture g = st->axis ? (st->pending < 0 ? TG_SWIPE_UP : TG_SWIPE_DOWN)
                                  : (st->pending < 0 ? TG_SWIPE_LEFT : TG_SWIPE_RIGHT);
-    for (int n = abs(st->pending); n > 0; n--) emit(st, g);
+    /* Steps in a direction without a key send nothing, so the touch may still become a flick. */
+    for (int n = abs(st->pending); n > 0; n--) st->committed |= emit(st, g);
     st->pending = 0;
-    st->committed = true;
 }
 
 /*
@@ -237,7 +239,10 @@ static void end_frame(struct tg_state *st)
         if (active > st->max_active) st->max_active = active;
         if (st->lifted_in_frame) {
             count_fingers(st);
-            if (st->phase == TG_TRACK) finish(st);
+            if (st->phase == TG_TRACK) {
+                track(st);
+                finish(st);
+            }
         } else if (!more_fingers_used(st, st->max_active)) {
             count_fingers(st);
             if (st->phase == TG_TRACK) track(st);
@@ -308,7 +313,9 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
         if (c->active && c->counted) st->counted_lifted = true;
         c->active = ev->value >= 0;
         c->counted = c->on_key = false;
-        if (c->active) c->has_pos = c->in_prev = false;
+        /* The kernel keeps a slot's position for the next contact and leaves out an axis whose
+         * value did not change, so the old position stays valid. */
+        if (c->active) c->in_prev = false;
     } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_X && c) {
         c->x = ev->value;
         c->has_pos = true;
@@ -358,7 +365,7 @@ void tg_advance(struct tg_state *st, int64_t now_us)
     for (int64_t d; (d = tg_next_deadline(st)) <= now_us;) {
         if (d > st->now) st->now = d;
         if (st->phase == TG_GATHER) count_fingers(st);
-        else track(st);
+        if (st->phase == TG_TRACK) track(st);
     }
     if (now_us > st->now) st->now = now_us;
 }

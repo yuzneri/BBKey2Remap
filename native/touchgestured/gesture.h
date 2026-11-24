@@ -72,7 +72,9 @@ void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_
 
 /*
  * Feeds one event of touch_keypad; time is first advanced to the event's timestamp. SYN_DROPPED
- * abandons the current touch; the caller should then feed the device's current slot state.
+ * abandons the current touch, and events up to the next SYN_REPORT are not used. After that
+ * SYN_REPORT the caller should feed the device's current state read from the kernel: every slot's
+ * ABS_MT_TRACKING_ID and position, then ABS_MT_SLOT of the current slot, then SYN_REPORT.
  */
 void tg_touch_event(struct tg_state *st, const struct tg_event *ev);
 

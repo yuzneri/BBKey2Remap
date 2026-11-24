@@ -51,8 +51,11 @@ check 'a repeated modifier is rejected' rejects 'bind 1 tap key 1 ctrl+ctrl\n' '
 check 'a dangling + is rejected' rejects 'bind 1 tap key 1 ctrl+\n' 'modifiers must be'
 check 'unknown modifiers are rejected' rejects 'bind 1 tap key 1 super\n' 'modifiers must be'
 check 'a gesture bound twice is rejected' rejects 'bind 2 flick up key 1\nbind 2 flick up key 2\n' '2-finger flick up is bound twice'
-check 'passthrough and gestures for the same finger count are rejected' rejects 'pass 1\nbind 1 tap key 1\n' \
-    '1-finger gestures are both passed through and bound'
+check 'passthrough and gestures for the same finger count are rejected at the bind line' rejects 'pass 1\nbind 1 tap key 1\n' \
+    '2: 1-finger gestures are both passed through and bound'
+check 'a comment may have any number of words' accepts '# a b c d e f g h i j\n  # indented comment\n' "$DEFAULTS"
+check 'passthrough after gestures of the same count is rejected at the pass line' rejects 'bind 1 tap key 1\npass 1\n' \
+    '2: 1-finger gestures are both passed through and bound'
 check 'pass set twice is rejected' rejects 'pass 2\npass 2\n' 'pass 2 is set twice'
 check 'a physical modifier key takes a single modifier' rejects 'mod 42 ctrl+shift\n' 'modifier must be'
 check 'a physical key with two modifiers is rejected' rejects 'mod 42 shift\nmod 42 ctrl\n' 'scancode 42 has two modifiers'
@@ -155,7 +158,8 @@ FLICKS='bind 1 flick up key 0x11\nbind 1 flick down key 0x12\nbind 1 flick left 
 # 10 mm in 40 ms is 250 mm/s, over flick_mm_s (150); 10 mm in 500 ms is 20 mm/s.
 check 'a fast movement ending in a lift is a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)40 -0\n" '40 1-finger flick right key 0x14\n'
 check 'a slow movement is not a flick' replays "$FLICKS" "$(stroke 0 500 100,200 310,200)500 -0\n" ''
-check 'a flick must cover start_mm' replays "$FLICKS" '0 0=500,200\n5 0=530,200\n10 -0\n' ''
+# 1.4 mm in 4 ms is 357 mm/s: fast enough, but short of start_mm.
+check 'a flick must cover start_mm' replays "$FLICKS" '0 0=500,200\n2 0=530,200\n4 -0\n' ''
 check 'a finger that stopped before lifting is not a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)200 -0\n" ''
 # NAME:CODE:FROM:TO. The last two lie 4 and 6 degrees inside a sector border (22.5 and 67.5 degrees).
 for dir in up:11:500,200:500,0 down:12:500,0:500,200 left:13:500,200:290,200 up-left:15:500,200:350,50 \
@@ -184,6 +188,17 @@ check 'a fast lift in a direction without a flick binding sends the held-back sw
 
 check 'with more fingers bound, a swipe waits for gather_ms before its first key' replays "${SWIPES}bind 2 tap key 2\n" \
     "$(stroke 0 500 100,200 310,200)500 -0\n" '150 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
+
+check 'a finger that moved and stopped during gather_ms starts its swipe when the fingers are counted' replays \
+    "${SWIPES}bind 2 tap key 2\n" "$(stroke 0 100 100,200 205,200)600 -0\n" \
+    '150 1-finger swipe right key 0x4\n150 1-finger swipe right key 0x4\n'
+check 'a slow swipe lifted within gather_ms still sends its keys' replays "${SWIPES}bind 2 tap key 2\n" \
+    "$(stroke 0 140 100,200 226,200)140 -0\n" '140 1-finger swipe right key 0x4\n140 1-finger swipe right key 0x4\n'
+check 'a swipe in a direction without a key does not stop a later flick' replays \
+    'bind 1 swipe right key 4\nbind 1 flick left key 0x13\n' "$(stroke 0 200 400,200 330,200)$(stroke 210 230 320,200 100,200)230 -0\n" \
+    '230 1-finger flick left key 0x13\n'
+check 'a finger landing after gather_ms does not move the gesture' replays "${SWIPES}bind 2 tap key 2\n" \
+    "0 0=900,300\n$(stroke 200 300 300,200 600,200 1)400 -1\n500 -0\n" ''
 
 # gestures CONFIG LOG EXPECTED: the gesture names replaying a device recording gives, one per line.
 gestures() {
@@ -257,6 +272,32 @@ check 'a touch with more events than the buffer holds is dropped, and the next o
   echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | tail -n 8; } > "$WORK/dropped.expected"
 check 'SYN_DROPPED lifts the passed fingers and ignores the rest of the touch' \
     passes 'pass 1\n' "$WORK/dropped.log" "$WORK/dropped.expected"
+
+# The kernel leaves out an axis whose value did not change, also when a new contact lands.
+cat > "$WORK/samex.log" <<'LOG'
+[  1000.000000] EV_ABS ABS_MT_TRACKING_ID 00000001
+[  1000.000000] EV_ABS ABS_MT_POSITION_X 00000190
+[  1000.000000] EV_ABS ABS_MT_POSITION_Y 000000c8
+[  1000.000000] EV_SYN SYN_REPORT 00000000
+[  1000.080000] EV_ABS ABS_MT_TRACKING_ID ffffffff
+[  1000.080000] EV_SYN SYN_REPORT 00000000
+[  1000.500000] EV_ABS ABS_MT_TRACKING_ID 00000002
+[  1000.500000] EV_ABS ABS_MT_POSITION_Y 000000c9
+[  1000.500000] EV_SYN SYN_REPORT 00000000
+[  1000.580000] EV_ABS ABS_MT_TRACKING_ID ffffffff
+[  1000.580000] EV_SYN SYN_REPORT 00000000
+LOG
+conf "$TAPS"
+check 'a new contact keeps the slot position the kernel did not repeat' \
+    sh -c '[ "$("$1" replay "$2" "$3")" = "$(printf "80 1-finger tap key 0x1\n580 1-finger tap key 0x1")" ]' \
+    - "$GESTURETOOL" "$WORK/g.conf" "$WORK/samex.log"
+{ touches '0 0=500,200\n'; echo '[  1000.030000] EV_SYN SYN_DROPPED 00000000'; echo '[  1000.030000] EV_SYN SYN_REPORT 00000000'
+  touches '80 -0\n'; } > "$WORK/drop-tap.log"
+check 'SYN_DROPPED abandons a recognised touch too' sh -c '[ -z "$("$1" replay "$2" "$3")" ]' \
+    - "$GESTURETOOL" "$WORK/g.conf" "$WORK/drop-tap.log"
+{ echo '[  1000.000000] EV_SYN SYN_DROPPED 00000000'; touches '0 0=500,200\n80 -0\n'; } > "$WORK/drop-partial.log"
+check 'events after SYN_DROPPED are not used until the next SYN_REPORT' sh -c '[ -z "$("$1" replay "$2" "$3")" ]' \
+    - "$GESTURETOOL" "$WORK/g.conf" "$WORK/drop-partial.log"
 
 conf 'pass 1\n'
 check 'device recording: every event of passed-through touches reaches the virtual touchpad' sh -c '
