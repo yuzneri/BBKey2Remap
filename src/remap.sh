@@ -9,7 +9,8 @@
 #   remap.sh reboot               reboot the device so that saved maps take effect
 # ASSIGN is MODIFIERS:KEY=VALUE for the character map, e.g. sym:H=R_DPAD_LEFT (validated again
 # by patch.awk), or kl:SCANCODE=KEYCODE for a modifier key's role in the key layout, e.g.
-# kl:110=CTRL_LEFT (validated again by klpatch.awk).
+# kl:110=CTRL_LEFT (validated again by klpatch.awk), or tp:mode=off to turn the keyboard's touch
+# surface off.
 set -eu
 case $0 in */*) dir=${0%/*} ;; *) dir=. ;; esac
 BASE=$(cd "$dir" && pwd -P)
@@ -24,6 +25,13 @@ LIVE_KL="$R/vendor/usr/keylayout/stmpe.kl"
 PHYSICAL='42 56 100 110'
 BB="$R/data/adb/magisk/busybox"
 LOCK="$BASE/.save.lock"
+# The touch surface is turned off by listing it in an excluded-input-devices.xml. Android reads the
+# one in /system/etc together with the vendor one, and the KEY2 has none in /system/etc, so the
+# module adds its own there instead of copying and editing the vendor list.
+TP_DEVICE=touch_keypad
+DST_TP="$BASE/system/etc/excluded-input-devices.xml"
+LIVE_TP="$R/system/etc/excluded-input-devices.xml"
+TP_MARK='<!-- KEY2_TP mode=off -->'
 
 fail() { echo "$*" >&2; exit 1; }
 runawk() { if [ -x "$BB" ]; then LC_ALL=C "$BB" awk "$@"; else LC_ALL=C awk "$@"; fi; }
@@ -53,20 +61,39 @@ generate_kl() {
 }
 
 # write_configs KCM_CONFIG KL_CONFIG ASSIGN...: the generators' config files, kl: assignments to
-# the second. Only a closed ASCII alphabet passes. Sets KL_COUNT.
+# the second. Only a closed ASCII alphabet passes. Sets KL_COUNT and TP_MODE (rom or off).
 write_configs() {
     kcm=$1 kl=$2; shift 2
     [ "$#" -le 1500 ] || fail '割り当ては1500件までです。'
     printf '# config\n' > "$kcm"
     printf '# config\n' > "$kl"
-    KL_COUNT=0
+    KL_COUNT=0 TP_MODE=rom
     for item in "$@"; do
         case "$item" in *[!A-Za-z0-9_+:=]*|'') fail '割り当てに使えない文字が含まれています。';; esac
         case "$item" in
             kl:*) printf '%s\n' "$item" >> "$kl"; KL_COUNT=$((KL_COUNT + 1)) ;;
+            tp:mode=off) [ "$TP_MODE" = rom ] || fail 'タッチ操作の設定が重複しています。'; TP_MODE=off ;;
+            tp:*) fail 'タッチ操作の設定が正しくありません。' ;;
             *) printf '%s\n' "$item" >> "$kcm" ;;
         esac
     done
+}
+
+# tp_blockers: why this module's excluded-input-devices.xml would not be the one in effect, one
+# "KEY=VALUE" line each: a live file the module did not write, or another module adding one.
+tp_blockers() {
+    if [ -e "$LIVE_TP" ] && ! grep -qxF "$TP_MARK" "$LIVE_TP"; then echo "tp_foreign=/system/etc/excluded-input-devices.xml"; fi
+    for m in "$R"/data/adb/modules/*; do
+        [ -d "$m" ] && [ "${m##*/}" != "$MODID" ] && [ ! -e "$m/disable" ] || continue
+        [ -e "$m/system/etc/excluded-input-devices.xml" ] && echo "tp_conflict_module=${m##*/}"
+    done
+    return 0
+}
+
+# generate_tp OUT: the excluded device list that turns the touch surface off.
+generate_tp() {
+    printf '<?xml version="1.0" encoding="utf-8"?>\n%s\n<devices>\n    <device name="%s"/>\n</devices>\n' \
+        "$TP_MARK" "$TP_DEVICE" > "$1"
 }
 
 # The lock is a symlink whose target is the owner's PID, created atomically by ln -s. A lock whose
@@ -98,6 +125,13 @@ copy_label() {
     echo "WARNING: $1のSELinuxラベルを付けられませんでした。次回の起動時にMagiskが付け直します。"
 }
 
+# label_new_system_file FILE: a file Magisk adds to /system has no live file to copy a label from,
+# and Magisk mounts it with the module file's own label, so give it the one /system/etc files have.
+label_new_system_file() {
+    chcon u:object_r:system_file:s0 "$1" 2>/dev/null ||
+        echo "WARNING: ${1##*/}のSELinuxラベルを付けられませんでした。再起動後、診断でタッチ操作がオフになったか確かめてください。"
+}
+
 # roles PREFIX FILE: "PREFIX=SCAN:KEYCODE" for each physical modifier key mapped in FILE.
 roles() {
     [ -r "$2" ] || return 0
@@ -110,10 +144,16 @@ roles() {
 status() {
     # The keyboard's block in dumpsys input lists its key layout, then its character map. Either
     # file name identifies it: a rejected one is replaced by Generic.kl / Generic.kcm.
-    dumpsys input 2>/dev/null | runawk '
+    # ExcludedDeviceNames is the list InputReader got from the excluded-input-devices.xml files.
+    dumpsys input 2>/dev/null | runawk -v tp="$TP_DEVICE" '
         $1 == "KeyLayoutFile:" { kl = $2 }
-        $1 == "KeyCharacterMapFile:" && (kl ~ /\/stmpe\.kl$/ || $2 ~ /\/stmpe\.kcm$/) {
-            print "kl_loaded=" kl; print "kcm_loaded=" $2; found = 1; exit }
+        !found && $1 == "KeyCharacterMapFile:" && (kl ~ /\/stmpe\.kl$/ || $2 ~ /\/stmpe\.kcm$/) {
+            print "kl_loaded=" kl; print "kcm_loaded=" $2; found = 1 }
+        $1 == "ExcludedDeviceNames:" && !listed {
+            listed = 1; line = $0; sub(/^[^[]*\[/, "", line); sub(/\].*$/, "", line)
+            n = split(line, names, /, */); ex = "no"
+            for (i = 1; i <= n; i++) if (names[i] == tp) ex = "yes"
+            print "tp_excluded=" ex }
         END { if (!found) { print "kl_loaded="; print "kcm_loaded=" } }' || :
     for p in product system_ext odm; do
         for f in keychars/stmpe.kcm keylayout/stmpe.kl; do
@@ -135,6 +175,11 @@ status() {
     if [ -s "$BASE/base.kl" ]; then echo kl_editable=yes; else echo kl_editable=no; fi
     roles kl_base "$BASE/base.kl"
     roles kl_live "$LIVE_KL"
+    if [ -s "$DST_TP" ]; then echo tp_saved=off; else echo tp_saved=rom; fi
+    if [ ! -e "$LIVE_TP" ]; then echo tp_live=rom
+    elif grep -qxF "$TP_MARK" "$LIVE_TP"; then echo tp_live=off
+    else echo tp_live=foreign; fi
+    tp_blockers
     for f in disable update remove; do [ -e "$BASE/$f" ] && echo "flag=$f"; done
     return 0
 }
@@ -153,6 +198,7 @@ case "$cmd" in
     read)
         sed -n 's/^# KEY2_V4 //p' "$DST"
         [ ! -s "$DST_KL" ] || sed -n 's/^# KEY2_KL /kl:/p' "$DST_KL"
+        [ ! -s "$DST_TP" ] || sed -n 's/^<!-- KEY2_TP \(.*\) -->$/tp:\1/p' "$DST_TP"
         exit 0 ;;
     original) cat "$BASE/base.kcm"; exit 0 ;;
 esac
@@ -162,6 +208,7 @@ TMP="$BASE/.stmpe.kcm.$$"
 TMP_KL="$BASE/.stmpe.kl.$$"
 CFG="$BASE/.config.$$"
 CFG_KL="$BASE/.config.kl.$$"
+TMP_TP="$BASE/.excluded.xml.$$"
 if [ "$cmd" = preview ] || [ "$cmd" = verify ]; then
     trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL"' EXIT
     trap 'exit 1' HUP INT TERM
@@ -180,7 +227,7 @@ fi
 [ -e "$BASE/update" ] && fail 'モジュールの更新が再起動待ちです。再起動してから編集してください。'
 [ -e "$BASE/remove" ] && fail 'モジュールの削除が再起動待ちです。再起動してから編集してください。'
 acquire_lock
-trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL"; if [ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi' EXIT
+trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL" "$TMP_TP"; if [ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi' EXIT
 trap 'exit 1' HUP INT TERM
 write_configs "$CFG" "$CFG_KL" "$@"
 generate "$CFG" "$TMP"
@@ -191,6 +238,13 @@ if [ "$KL_COUNT" -gt 0 ]; then
     generate_kl "$CFG_KL" "$TMP_KL"
     chmod 0644 "$TMP_KL"
     copy_label "$LIVE_KL" "$TMP_KL"
+fi
+if [ "$TP_MODE" = off ]; then
+    blockers=$(tp_blockers | sed 's/^[^=]*=//' | tr '\n' ' ')
+    [ -z "$blockers" ] || fail "ほかの除外デバイス一覧（${blockers% }）があるため、タッチ操作をオフにできません。"
+    generate_tp "$TMP_TP"
+    chmod 0644 "$TMP_TP"
+    label_new_system_file "$TMP_TP"
 fi
 # The renames stay inside the module directory: the live bind mounts keep the old inodes until
 # the next boot. sync before them so a power loss cannot leave a truncated file behind the name.
@@ -203,6 +257,13 @@ else
     # No modifier key edits: install no key layout at all, so the original stays untouched.
     rm -f "$DST_KL"
     rmdir "${DST_KL%/*}" 2>/dev/null || :
+fi
+if [ "$TP_MODE" = off ]; then
+    [ -d "${DST_TP%/*}" ] || mkdir -m 0755 "${DST_TP%/*}"
+    mv -f "$TMP_TP" "$DST_TP"
+else
+    rm -f "$DST_TP"
+    rmdir "${DST_TP%/*}" 2>/dev/null || :
 fi
 sync
 echo OK

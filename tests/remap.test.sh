@@ -11,6 +11,7 @@ cp "$FIXTURES/key2-base.kcm" "$MOD/base.kcm"
 cp "$FIXTURES/key2-base.kcm" "$DST"
 cp "$FIXTURES/key2-base.kl" "$MOD/base.kl"
 DST_KL="$MOD/system/vendor/usr/keylayout/stmpe.kl"
+DST_TP="$MOD/system/etc/excluded-input-devices.xml"
 export KEY2REMAP_ROOT="$DEV" PATH="$DEV/bin:$PATH"
 : "${KLTOOL:?run tests through tests/run.sh}"
 
@@ -21,13 +22,15 @@ refused() {
     message=$1; shift
     cp "$DST" "$WORK/before"
     rm -f "$WORK/before.kl"; [ ! -e "$DST_KL" ] || cp "$DST_KL" "$WORK/before.kl"
+    rm -f "$WORK/before.tp"; [ ! -e "$DST_TP" ] || cp "$DST_TP" "$WORK/before.tp"
     "$@" > "$WORK/out" 2>&1
     status=$?
     [ "$status" -eq 1 ] && grep -qF "$message" "$WORK/out" || { echo "exit $status"; cat "$WORK/out"; return 1; }
     cmp "$DST" "$WORK/before" || return 1
     if [ -e "$WORK/before.kl" ]; then cmp "$DST_KL" "$WORK/before.kl" || return 1; else [ ! -e "$DST_KL" ] || { echo 'key layout appeared'; return 1; }; fi
+    if [ -e "$WORK/before.tp" ]; then cmp "$DST_TP" "$WORK/before.tp" || return 1; else [ ! -e "$DST_TP" ] || { echo 'excluded device list appeared'; return 1; }; fi
     [ ! -e "$MOD/.save.lock" ] && [ ! -L "$MOD/.save.lock" ] || { echo 'lock left behind'; return 1; }
-    ! ls "$MOD"/.stmpe.kcm.* "$MOD"/.config.* >/dev/null 2>&1 || { echo 'temporary files left'; return 1; }
+    ! ls "$MOD"/.stmpe.kcm.* "$MOD"/.config.* "$MOD"/.excluded.xml.* >/dev/null 2>&1 || { echo 'temporary files left'; return 1; }
 }
 
 save_writes_checked_map() {
@@ -178,6 +181,78 @@ status_reports_fallback_character_map_and_layout_conflicts() {
         grep -qx 'shadowed_by=/odm/usr/keylayout/stmpe.kl' "$WORK/status" && grep -qx 'conflict_module=kl' "$WORK/status"
 }
 check 'status reports a fallback character map and key layout shadowing or conflicts' status_reports_fallback_character_map_and_layout_conflicts
+
+# excluded_names FILE: the device names Android's ConfigurationProcessor would read from FILE
+# (<device name="..."/> children of the <devices> root), one per line.
+excluded_names() {
+    python3 -I -c 'import sys, xml.etree.ElementTree as E
+r = E.parse(sys.argv[1]).getroot()
+assert r.tag == "devices"
+print("\n".join(d.get("name") for d in r if d.tag == "device"))' "$1"
+}
+
+save_turns_touch_off() {
+    : > "$DEV/chcon.log"
+    out=$(remap save sym:H=R_DPAD_LEFT tp:mode=off) || { echo "$out"; return 1; }
+    [ "$(excluded_names "$DST_TP")" = touch_keypad ] &&
+        [ "$(stat -c %a "$DST_TP")" = 644 ] && [ "$(stat -c %a "${DST_TP%/*}")" = 755 ] &&
+        grep -qx 'u:object_r:system_file:s0 .*/.excluded.xml.[0-9]*' "$DEV/chcon.log" &&
+        [ "$(remap read | sort | tr '\n' ' ')" = 'sym:H=R_DPAD_LEFT tp:mode=off ' ] && [ -s "$DST" ]
+}
+check 'save with tp:mode=off adds an excluded device list naming touch_keypad, readable back' save_turns_touch_off
+
+save_without_touch_mode_removes_list() {
+    remap save tp:mode=off >/dev/null && remap save sym:H=R_DPAD_LEFT >/dev/null &&
+        [ ! -e "$DST_TP" ] && [ ! -e "${DST_TP%/*}" ] && [ "$(remap read)" = sym:H=R_DPAD_LEFT ]
+}
+check 'saving without tp:mode=off installs no excluded device list' save_without_touch_mode_removes_list
+
+check 'preview accepts tp:mode=off and prints only the character map' sh -c 'sh "$1" preview tp:mode=off | cmp - "$2"' _ "$MOD/remap.sh" "$MOD/base.kcm"
+remap save tp:mode=off >/dev/null
+check 'an unknown touch mode is refused' refused 'タッチ操作の設定が正しくありません' remap save tp:mode=on
+check 'an unknown touch setting is refused' refused 'タッチ操作の設定が正しくありません' remap save tp:speed=3
+check 'a repeated touch mode is refused' refused 'タッチ操作の設定が重複しています' remap save tp:mode=off tp:mode=off
+check 'preview refuses an unknown touch mode' refused 'タッチ操作の設定が正しくありません' remap preview tp:mode=on
+
+with_live_list() { # CONTENT COMMAND...: run COMMAND with /system/etc/excluded-input-devices.xml holding CONTENT
+    mkdir -p "$DEV/system/etc"; printf "$1" > "$DEV/system/etc/excluded-input-devices.xml"; shift
+    "$@"; status=$?
+    rm -rf "$DEV/system"; return "$status"
+}
+check 'turning touch off is refused when another excluded device list is live in /system/etc' refused \
+    '/system/etc/excluded-input-devices.xml' with_live_list '<devices>\n</devices>\n' remap save tp:mode=off
+check 'the module'"'"'s own live list does not block saving it again' \
+    with_live_list '<!-- KEY2_TP mode=off -->\n<devices/>\n' sh -c 'sh "$1" save tp:mode=off >/dev/null' _ "$MOD/remap.sh"
+with_other_module_list() {
+    mkdir -p "$DEV/data/adb/modules/other/system/etc"; touch "$DEV/data/adb/modules/other/system/etc/excluded-input-devices.xml"
+    "$@"; status=$?
+    rm -rf "$DEV/data/adb/modules/other"; return "$status"
+}
+check 'turning touch off is refused when another module adds an excluded device list' refused \
+    'other' with_other_module_list remap save tp:mode=off
+
+status_reports_touch() {
+    remap save tp:mode=off >/dev/null && remap status > "$WORK/status" &&
+        grep -qx 'tp_saved=off' "$WORK/status" && grep -qx 'tp_live=rom' "$WORK/status" &&
+        ! grep -q '^tp_excluded=' "$WORK/status" && ! grep -q '^tp_\(foreign\|conflict_module\)=' "$WORK/status" || return 1
+    printf '    ExcludedDeviceNames: [qti-haptics, touch_keypad, si_haptic]\n' >> "$DEV/dumpsys-input.txt"
+    mkdir -p "$DEV/system/etc" && cp "$DST_TP" "$DEV/system/etc/"
+    remap status > "$WORK/status"
+    sed -i '/ExcludedDeviceNames/d' "$DEV/dumpsys-input.txt"; rm -rf "$DEV/system"
+    grep -qx 'tp_live=off' "$WORK/status" && grep -qx 'tp_excluded=yes' "$WORK/status"
+}
+check 'status reports the saved and live touch mode and whether Android excludes touch_keypad' status_reports_touch
+
+status_reports_touch_problems() {
+    printf '    ExcludedDeviceNames: [qti-haptics, touch_keypad2]\n' >> "$DEV/dumpsys-input.txt"
+    remap save sym:H=R_DPAD_LEFT >/dev/null
+    with_other_module_list with_live_list '<devices/>\n' sh -c 'sh "$1" status' _ "$MOD/remap.sh" > "$WORK/status"
+    sed -i '/ExcludedDeviceNames/d' "$DEV/dumpsys-input.txt"
+    grep -qx 'tp_saved=rom' "$WORK/status" && grep -qx 'tp_live=foreign' "$WORK/status" &&
+        grep -qx 'tp_excluded=no' "$WORK/status" && grep -qx 'tp_foreign=/system/etc/excluded-input-devices.xml' "$WORK/status" &&
+        grep -qx 'tp_conflict_module=other' "$WORK/status"
+}
+check 'status reports a foreign excluded device list, a conflicting module and a touch surface still in use' status_reports_touch_problems
 
 reboots_through_power_manager() {
     rm -f "$DEV/svc.log"
