@@ -25,6 +25,7 @@
 <section>
 <p class="rowlabel" id="tabsLabel">一緒に押す修飾キー</p>
 <div id="tabs" class="tabs" role="tablist" aria-labelledby="tabsLabel"></div>
+<div class="tabpanel">
 <details id="advanced">
 <summary>組み合わせや左右を指定する</summary>
 <div id="mods" class="mods"></div>
@@ -32,6 +33,7 @@
 </details>
 <p id="layerHint" class="hint"></p>
 <div id="keyboard" tabindex="-1"></div>
+</div>
 <div class="toolbar">
 <button id="pickSource" type="button">キーを押して選ぶ</button>
 <button id="resetLayer" type="button">このレイヤーをリセット</button>
@@ -71,8 +73,10 @@
 <p id="touchLayerHint" class="hint"></p>
 <p class="rowlabel" id="fingerTabsLabel">指の本数</p>
 <div id="fingerTabs" class="tabs" role="radiogroup" aria-labelledby="fingerTabsLabel"></div>
+<div class="tabpanel">
 <label id="passBox" class="check"><input id="passFingers" type="checkbox"><span id="passLabel"></span></label>
 <div id="gestures" class="gestures"></div>
+</div>
 <div id="gesturePanel" hidden>
 <h3 id="gestureTarget"></h3>
 <div id="gestureCats" class="tabs"></div>

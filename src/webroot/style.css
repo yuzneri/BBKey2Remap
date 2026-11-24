@@ -1,4 +1,4 @@
-:root{color-scheme:light dark;font:16px system-ui,sans-serif;--line:#8885;--accent:#3465a4;--soft:#3465a425;--warn:#c46a00}
+:root{color-scheme:light dark;font:16px system-ui,sans-serif;--line:#8885;--accent:#3465a4;--soft:#3465a425;--warn:#c46a00;--panel:#8882}
 *{box-sizing:border-box}
 body{margin:0}
 main{max-width:680px;margin:auto;padding:20px 12px 36px}
@@ -28,14 +28,15 @@ footer{position:sticky;bottom:0;margin-top:24px;padding:10px 0 12px;background:C
 .unavailable{opacity:.5}
 [hidden]{display:none!important}
 
-.tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+/* Tabs sit on a line like folder tabs; what they switch is shown on a panel right below. */
+.tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px 0 0;border-bottom:2px solid var(--accent)}
 .rowlabel{margin:12px 0 0;font-size:12px;font-weight:600;color:gray}
 .choices{display:grid;gap:6px;margin:8px 0}
 .choice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px}
 .choice input{margin:3px 0 0}
 .choice small{display:block;margin-top:2px;font-size:12px;letter-spacing:0;color:gray}
 .choice.checked{border-color:var(--accent);background:var(--soft)}
-.tab{flex:none;padding:8px 12px;border-radius:999px;position:relative}
+.tab{flex:none;padding:8px 12px;border-radius:9px 9px 0 0;border-bottom:0;position:relative}
 .tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .badge{display:inline-block;min-width:18px;margin-left:6px;padding:0 5px;border-radius:9px;background:var(--warn);color:#fff;font-size:11px;line-height:18px}
 details{margin:6px 0}
@@ -45,6 +46,8 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 .mods select{width:100%}
 #extra label{font-size:13px;display:flex;align-items:center;gap:3px}
 
+.tabpanel{padding:2px 6px 6px;margin:0 0 8px;background:var(--panel);border-radius:0 0 9px 9px}
+.key,.gbtn{background:Canvas}
 .keyline{display:grid;grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;margin:3px 0}
 .key{min-width:0;padding:3px 1px 5px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:52px;position:relative}
 .key small{font-size:9px;letter-spacing:0;color:#888;max-width:100%;overflow:hidden;white-space:nowrap}
@@ -55,7 +58,7 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 .key.assigned::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
 .key.selected{outline:3px solid #4789df;outline-offset:-1px}
 .key.space{grid-column:span 4}
-.key.mod{background:#8882}
+.key.mod{background:#8883}
 .key.mod span{font-size:13px;font-weight:600}
 .key.mod.held{background:var(--accent);color:#fff}
 .key.mod.held small{color:#fffc}
@@ -64,8 +67,8 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 #panel h2{font-size:20px}
 #current{margin:4px 0}
 #warnings{margin:0 0 6px;padding-left:20px;font-size:13px;color:var(--warn)}
-.palette{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:8px 0}
-.pal{padding:12px 4px;font-size:15px}
+.palette{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin:0 0 8px;padding:8px;background:var(--panel);border-radius:0 0 9px 9px}
+.pal{padding:12px 4px;font-size:15px;background:Canvas}
 .pal.active{background:var(--accent);border-color:var(--accent);color:#fff;outline:0}
 .palette>.wide,.palette>.charrow{grid-column:1/-1}
 .charrow{display:flex;gap:8px}
@@ -92,7 +95,7 @@ dialog{max-width:min(90vw,420px);border:1px solid var(--line);border-radius:12px
 dialog::backdrop{background:#0006}
 #confirmText{white-space:pre-wrap;max-height:60vh;overflow:auto}
 
-.gestures{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:start;margin:10px 0}
+.gestures{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:start;margin:8px 0 0}
 .glabel{font-size:13px;padding-top:12px}
 .grow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .gbtn{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;min-width:0}

@@ -562,7 +562,7 @@ function renderFingers() {
     el('div', { className: 'glabel', textContent: 'タップ' }), row('tap'));
 }
 
-/** The palette categories for gesture G: for a swipe, scrolling first (the row scrolls sideways), then the keys. */
+/** The palette categories for gesture G: for a swipe, scrolling first, as the one choice that is not a key, then the keys. */
 function gestureCategories(g) {
   return g.startsWith('swipe_') ? [{ id: 'scroll', label: 'スクロール' }, ...KCM.PALETTE] : KCM.PALETTE;
 }
