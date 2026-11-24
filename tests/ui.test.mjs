@@ -133,6 +133,12 @@ test('gestures: the 9 of touchgestured, their names, and their key values', () =
   assert.equal(KCM.formatTouchKey('PAGE_UP', ['shift'], true), 'PAGE_UP+shift+once');
   assert.equal(KCM.formatTouchKey('PAGE_UP', ['shift']), 'PAGE_UP+shift');
   assert.equal(KCM.touchKeyText('PAGE_UP+once'), 'PgUp（1回）');
+  assert.equal(KCM.touchKeyText(KCM.TOUCH_SCROLL), 'スクロール');
+  assert.ok(KCM.validate({ 'tp:1_swipe_up': 'scroll', 'tp:shift_2_swipe_left': 'scroll' }));
+  for (const bad of [{ 'tp:1_flick_up': 'scroll' }, { 'tp:1_tap': 'scroll' }, { 'tp:1_swipe_up': 'scroll+ctrl' },
+    { 'tp:1_swipe_up': 'scroll+once' }, { 'tp:1_swipe_up': 'SCROLL+once+ctrl' }, { 'tp:2_pass': 'on', 'tp:2_swipe_up': 'scroll' }]) {
+    assert.throws(() => KCM.validate(bad), JSON.stringify(bad));
+  }
   assert.ok(KCM.validate({ 'tp:1_swipe_up': 'PAGE_UP+once', 'tp:alt_2_swipe_left': 'MOVE_HOME+ctrl+once' }));
   for (const bad of [{ 'tp:1_tap': 'ENTER+once' }, { 'tp:1_flick_up': 'PAGE_UP+once' }, { 'tp:1_swipe_up': 'PAGE_UP+once+once' },
     { 'tp:1_swipe_up': 'PAGE_UP+once+ctrl' }]) {

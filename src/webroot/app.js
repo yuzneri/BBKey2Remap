@@ -469,8 +469,16 @@ function allGestureIds(f) { return KCM.TOUCH_LAYERS.flatMap((l) => gestureIds(f,
 function fallbackValue(g) {
   const base = map[KCM.gestureId('', touchFingers, g)];
   if (!touchLayer || !base) return '';
+  if (base === KCM.TOUCH_SCROLL) return base;
   const { code, mods, once } = KCM.parseTouchKey(base);
   return KCM.formatTouchKey(code, touchLayer === 'sym' ? mods : [...mods, touchLayer], once);
+}
+
+/** What an unbound gesture G of the selected layer does: nothing, or the base layer's key or scroll. */
+function unboundText(g) {
+  const v = fallbackValue(g);
+  if (!v) return '割り当てなし';
+  return v === KCM.TOUCH_SCROLL ? '割り当てなし（スクロールになる）' : `割り当てなし（${KCM.touchKeyText(v)}を送る）`;
 }
 
 /** fallbackValue(G) as text such as "Shift+PgUp（1回）", or ''. */
@@ -536,8 +544,7 @@ function renderFingers() {
     const { code, mods, once } = KCM.parseTouchKey(value);
     const b = button('', () => { touchGesture = g.id; render(); },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
-    b.setAttribute('aria-label', KCM.gestureName(id) + '：' +
-      (own(map, id) ? KCM.touchKeyText(map[id]) : fallback ? `割り当てなし（${fallback}を送る）` : '割り当てなし'));
+    b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(g.id)));
     b.setAttribute('aria-pressed', String(touchGesture === g.id));
     // The group heading names the kind, so a button shows only its direction.
     // The once mark is apart from the key so that a long key's ellipsis cannot hide it.
@@ -560,19 +567,26 @@ function renderGesturePanel() {
   $('gesturePanel').hidden = !id || own(map, `tp:${touchFingers}_pass`);
   if ($('gesturePanel').hidden) return;
   const { code, mods, once } = KCM.parseTouchKey(map[id]);
-  const fallback = own(map, id) ? '' : fallbackText(touchGesture);
-  $('gestureTarget').textContent = KCM.gestureName(id) + '：' +
-    (own(map, id) ? KCM.touchKeyText(map[id]) : fallback ? `割り当てなし（${fallback}を送る）` : '割り当てなし');
+  const scroll = map[id] === KCM.TOUCH_SCROLL;
+  $('gestureTarget').textContent = KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(touchGesture));
   $('gestureMods').replaceChildren(...['ctrl', 'shift', 'alt', 'meta'].map((m) => {
-    const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) });
+    const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) || scroll });
     box.onchange = () => setGestureKey(id, code, box.checked ? [...mods, m] : mods.filter((x) => x !== m), once);
     return el('label', { className: 'check' }, box, document.createTextNode(m[0].toUpperCase() + m.slice(1)));
   }));
   // Only swipes repeat; flicks and taps send their key once anyway.
   $('gestureOnceBox').hidden = !touchGesture.startsWith('swipe_');
   $('gestureOnce').checked = once;
-  $('gestureOnce').disabled = !own(map, id);
+  $('gestureOnce').disabled = !own(map, id) || scroll;
   $('gestureOnce').onchange = () => setGestureKey(id, code, mods, $('gestureOnce').checked);
+  $('gestureScrollBox').hidden = !touchGesture.startsWith('swipe_');
+  $('gestureScroll').className = 'tab' + (scroll ? ' active' : '');
+  $('gestureScroll').setAttribute('aria-pressed', String(scroll));
+  $('gestureScroll').onclick = () => {
+    map[id] = KCM.TOUCH_SCROLL;
+    changed(`${KCM.gestureName(id)}をシステムのスクロールにしました。`);
+  };
+  $('gestureHint').textContent = scrollHint(touchGesture, scroll);
   $('gestureCats').replaceChildren(...KCM.PALETTE.map((c) => button(c.label, () => { touchCategory = c.id; render(); },
     'tab' + (c.id === touchCategory ? ' active' : ''))));
   const cat = KCM.PALETTE.find((c) => c.id === touchCategory) || KCM.PALETTE[0];
@@ -583,6 +597,20 @@ function renderGesturePanel() {
   }));
   $('gestureClear').disabled = !own(map, id);
   $('gestureClear').onclick = () => { delete map[id]; changed(`${KCM.gestureName(id)}の割り当てを外しました。`); };
+}
+
+/**
+ * The note on swipe G set to scroll, or on a flick whose swipe in the same direction scrolls (in
+ * the selected layer, or the base layer when it has nothing): such a flick is never sent, since
+ * the touch goes to the ROM as soon as it moves that way.
+ */
+function scrollHint(g, scroll) {
+  if (scroll) return 'この向きになぞり始めると、指を離すまでタッチをROMに渡し、ROMがスクロールします。同じ向きの払うは送られません。';
+  if (!g.startsWith('flick_')) return '';
+  const swipe = g.replace('flick_', 'swipe_');
+  const sid = KCM.gestureId(touchLayer, touchFingers, swipe);
+  const value = own(map, sid) ? map[sid] : fallbackValue(swipe);
+  return value === KCM.TOUCH_SCROLL ? `同じ向きのなぞる（${KCM.gestureName(sid)}）がスクロールなので、この払うは送られません。` : '';
 }
 
 function setGestureKey(id, code, mods, once) {

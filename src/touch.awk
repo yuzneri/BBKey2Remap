@@ -53,6 +53,10 @@ FNR == NR {
             layer_name = substr(id, 1, RLENGTH - 1); layer = layer_of[layer_name]; id = substr(id, RLENGTH + 1)
         }
         fingers = substr(id, 1, 1); gesture = substr(id, 3)
+        if (value == "scroll") {
+            print "bind " (layer ? layer_name " " : "") fingers " " conf_name[gesture] " scroll"
+            next
+        }
         parts = split(value, p, "+")
         once = p[parts] == "once"
         if (once) parts--

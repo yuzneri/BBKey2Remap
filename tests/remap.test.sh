@@ -332,6 +332,16 @@ once_saved() {
 }
 check 'a once-only swipe is saved and read back' once_saved
 check 'once on a tap is refused by the daemon check' refused 'タッチ操作の設定が正しくないため' remap save tp:1_tap=ENTER+once
+scroll_saved() {
+    remap save tp:mode=gesture tp:1_swipe_up=scroll tp:shift_1_swipe_down=scroll tp:1_swipe_left=DPAD_LEFT >/dev/null &&
+        grep -qx 'bind 1 swipe up scroll' "$DST_TG_CONF" && grep -qx 'bind shift 1 swipe down scroll' "$DST_TG_CONF" &&
+        ! grep -q 'scroll' "$DST_TG_KL" && "$KLTOOL" check "$DST_TG_KL" >/dev/null &&
+        [ "$(remap read | grep '_swipe_' | sort | tr '\n' ' ')" = 'tp:1_swipe_left=DPAD_LEFT tp:1_swipe_up=scroll tp:shift_1_swipe_down=scroll ' ]
+}
+check 'a swipe set to scroll is saved without a key and read back' scroll_saved
+for bad in tp:1_flick_up=scroll tp:1_tap=scroll tp:1_swipe_up=scroll+ctrl tp:1_swipe_up=scroll+once; do
+    check "scroll is refused where it cannot be: $bad" refused 'タッチ操作の設定が正しくありません' remap save "$bad"
+done
 check 'passthrough is not per layer' refused 'タッチ操作の設定が正しくありません' remap save tp:shift_1_pass=on
 check 'an unknown layer is refused' refused 'タッチ操作の設定が正しくありません' remap save tp:meta_1_tap=ENTER
 check 'a layer binding next to passthrough of its finger count is refused by the daemon check' refused \

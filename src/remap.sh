@@ -15,7 +15,8 @@
 # surface: tp:mode=off|gesture, a threshold such as tp:step_mm=3, a gesture's key such as
 # tp:1_swipe_left=DPAD_LEFT+shift (with a layer prefix such as tp:shift_1_swipe_left for the key
 # while that physical modifier is held, and +once last for a swipe that sends it once per touch),
-# or tp:3_pass=on (checked again by touchgestured check).
+# tp:1_swipe_up=scroll for a swipe that hands the touch to the ROM, or tp:3_pass=on (checked again
+# by touchgestured check).
 set -eu
 case $0 in */*) dir=${0%/*} ;; *) dir=. ;; esac
 BASE=$(cd "$dir" && pwd -P)
@@ -116,8 +117,11 @@ check_touch() {
             [ "${#int}" -le 5 ] && [ "${#frac}" -le 6 ] || fail 'タッチ操作の設定が正しくありません。' ;;
         [123]_swipe_up|[123]_swipe_down|[123]_swipe_left|[123]_swipe_right|[123]_tap|\
         [123]_flick_up|[123]_flick_down|[123]_flick_left|[123]_flick_right)
-            case "$value" in [A-Z0-9]*) ;; *) fail 'タッチ操作の設定が正しくありません。' ;; esac
-            case "$value" in *[!A-Za-z0-9_+]*|*+|*++*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+            case "$value" in
+                scroll) case "$gesture" in [123]_swipe_*) ;; *) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+                [A-Z0-9]*) case "$value" in *[!A-Za-z0-9_+]*|*+|*++*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+                *) fail 'タッチ操作の設定が正しくありません。' ;;
+            esac ;;
         [123]_pass) [ "$id" = "$gesture" ] && [ "$value" = on ] || fail 'タッチ操作の設定が正しくありません。' ;;
         *) fail 'タッチ操作の設定が正しくありません。' ;;
     esac

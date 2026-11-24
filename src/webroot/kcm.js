@@ -117,8 +117,9 @@
 
   /**
    * Whether ID and VALUE are a touch surface setting: tp:mode (off or gesture), a threshold, a
-   * gesture's key (KEYCODE[+MODIFIER...], then +once for a swipe) or a passthrough finger count. remap.sh checks ranges and
-   * key code labels again on the files it generates.
+   * gesture's key (KEYCODE[+MODIFIER...], then +once for a swipe; or scroll for a swipe) or a
+   * passthrough finger count. remap.sh checks ranges and key code labels again on the files it
+   * generates.
    */
   function validTouch(id, v) {
     if (typeof v !== 'string') return false;
@@ -126,6 +127,7 @@
     if (TOUCH_THRESHOLDS.includes(id.slice(3))) return THRESHOLD_FORM.test(v);
     if (/^tp:[123]_pass$/.test(id)) return v === 'on';
     if (!TOUCH_GESTURE.test(id)) return false;
+    if (v === TOUCH_SCROLL) return id.includes('_swipe_');
     const [code, ...mods] = v.split('+');
     // "+once" (last) makes a swipe send its key once per touch; flicks and taps send once anyway.
     if (mods[mods.length - 1] === 'once') {
@@ -134,6 +136,9 @@
     }
     return /^[A-Z0-9][A-Z0-9_]*$/.test(code) && mods.every((m, i) => TOUCH_MODIFIERS.includes(m) && mods.indexOf(m) === i);
   }
+
+  /** The value of a swipe that hands the touch to the ROM, which scrolls; lower case, unlike key codes. */
+  const TOUCH_SCROLL = 'scroll';
 
   const ARROWS = { up: '↑', down: '↓', left: '←', right: '→' };
   /** The gestures of one finger count, as the page lists them: {id ("swipe_up"), kind, dir}. */
@@ -169,6 +174,7 @@
 
   /** "Ctrl+Shift+←", or "PgUp（1回）" for a swipe that sends once, for a gesture's key value. */
   function touchKeyText(v) {
+    if (v === TOUCH_SCROLL) return 'スクロール';
     const { code, mods, once } = parseTouchKey(v);
     return [...mods.map((m) => MODIFIER_NAMES[m]), shortName(code)].join('+') + (once ? '（1回）' : '');
   }
@@ -703,7 +709,7 @@
     META, MODIFIERS, ORDER, ROWS, KEYS, ACTIONS,
     canonical, validValue, validId, validate, parseKcm, matchesMetaState, evaluate,
     availableModifiers, unreachableParts, pressStates, companions, ruleLayers, effectiveRows,
-    TOUCH_GESTURES, TOUCH_LAYERS, gestureId, gestureName, parseTouchKey, formatTouchKey, touchKeyText, validThreshold,
+    TOUCH_GESTURES, TOUCH_LAYERS, TOUCH_SCROLL, gestureId, gestureName, parseTouchKey, formatTouchKey, touchKeyText, validThreshold,
     warnings, parseStatus, diagnose, diffAssignments, PALETTE, shortName, legend, keyCodeOf, editableKeyOf,
     PHYSICAL, LAYOUT, ROLE_MODIFIERS, ROLE_NOTICE, validRole, roleName, modifierLabel, rolesOf, layerOf, availableFromRoles, roleWarnings,
   };
