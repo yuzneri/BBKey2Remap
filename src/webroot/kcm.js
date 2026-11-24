@@ -106,6 +106,9 @@
     return !!m && own(PHYSICAL, m[1]) && typeof v === 'string' && (ROLE_MODIFIERS.includes(v) || own(ACTIONS, v));
   }
 
+  /** Whether ID and VALUE are a touch surface setting; "tp:mode=off" is the only one so far. */
+  function validTouch(id, v) { return id === 'tp:mode' && v === 'off'; }
+
   /** Whether ID ("layer:KEY") names a canonical layer and a KEY2 key. */
   function validId(id) {
     const p = id.split(':');
@@ -119,7 +122,8 @@
     }
     const out = Object.create(null);
     for (const [id, v] of Object.entries(obj)) {
-      if (id.startsWith('kl:') ? !validRole(id, v) : !validId(id) || !validValue(v)) throw new Error('読み込めない割り当てがあります：' + id);
+      const ok = id.startsWith('kl:') ? validRole(id, v) : id.startsWith('tp:') ? validTouch(id, v) : validId(id) && validValue(v);
+      if (!ok) throw new Error('読み込めない割り当てがあります：' + id);
       out[id] = v;
     }
     return out;
@@ -391,10 +395,15 @@
     return out;
   }
 
-  /** remap.sh status output as {kcmLoaded, shadowedBy, conflicts, applied, flags, modifiers}. */
+  /**
+   * remap.sh status output as {kcmLoaded, shadowedBy, conflicts, applied, flags, modifiers, touch}.
+   * Touch fields: tpSaved and tpLive are "rom" or "off" (tpLive also "foreign"); tpExcluded is
+   * "yes", "no", or "" when dumpsys gave no excluded device list.
+   */
   function parseStatus(text) {
     const st = { kcmLoaded: '', klLoaded: '', shadowedBy: [], conflicts: [], applied: false, klApplied: false,
-      klEditable: false, flags: [], klBase: {}, klLive: {} };
+      klEditable: false, flags: [], klBase: {}, klLive: {},
+      tpSaved: 'rom', tpLive: 'rom', tpExcluded: '', tpForeign: [], tpConflicts: [] };
     for (const line of text.split('\n')) {
       const i = line.indexOf('=');
       if (i < 0) continue;
@@ -407,6 +416,11 @@
       else if (k === 'kl_loaded') st.klLoaded = v;
       else if (k === 'kl_applied') st.klApplied = v === 'yes';
       else if (k === 'kl_editable') st.klEditable = v === 'yes';
+      else if (k === 'tp_saved') st.tpSaved = v;
+      else if (k === 'tp_live') st.tpLive = v;
+      else if (k === 'tp_excluded') st.tpExcluded = v;
+      else if (k === 'tp_foreign') st.tpForeign.push(v);
+      else if (k === 'tp_conflict_module') st.tpConflicts.push(v);
       else if (k === 'kl_base' || k === 'kl_live') {
         const [scan, code] = v.split(':');
         st[k === 'kl_base' ? 'klBase' : 'klLive'][scan] = code;
@@ -432,9 +446,24 @@
     if (st.flags.includes('update')) out.push({ warn: true, text: 'モジュールの更新が再起動待ちです。再起動するまで保存できません。' });
     if (st.flags.includes('remove')) out.push({ warn: true, text: 'モジュールの削除が再起動待ちです。' });
     if (st.flags.includes('disable')) out.push({ warn: true, text: 'モジュールは無効です。再起動後は導入前の状態に戻ります。' });
+    for (const p of st.tpForeign) out.push({ warn: true, text: `${p}があるため、キーボードのタッチ操作をオフにできません。` });
+    for (const m of st.tpConflicts) out.push({ warn: true, text: `モジュール${m}も除外デバイス一覧（excluded-input-devices.xml）を追加しているため、キーボードのタッチ操作をオフにできません。` });
+    if (st.tpSaved !== 'off' && st.tpLive !== 'off' && st.tpExcluded === 'yes') {
+      out.push({ warn: true, text: 'このモジュール以外の設定で、キーボードのタッチ操作がオフになっています。' });
+    }
+    if (st.tpSaved === 'off' && st.tpLive === 'off' && st.tpExcluded === 'no') {
+      out.push({ warn: true, text: 'タッチ操作をオフにする設定は配置されていますが、Androidに使われていません。' });
+    }
     if (st.kcmLoaded && /\/stmpe\.kcm$/.test(st.kcmLoaded)) out.push({ warn: false, text: `Androidは${st.kcmLoaded}を読み込んでいます。` });
     if (st.klLoaded && /\/stmpe\.kl$/.test(st.klLoaded)) out.push({ warn: false, text: `Androidは${st.klLoaded}を読み込んでいます。` });
-    out.push(st.applied && st.klApplied ? { warn: false, text: '保存した設定は使用中です。' }
+    const touchApplied = (st.tpSaved === 'off') === (st.tpLive === 'off');
+    if (st.tpSaved === 'off') {
+      if (!touchApplied) out.push({ warn: false, text: 'キーボードのタッチ操作は再起動後にオフになります。' });
+      else if (st.tpExcluded !== 'no') out.push({ warn: false, text: 'キーボードのタッチ操作はオフです。' });
+    } else if (st.tpLive === 'off') {
+      out.push({ warn: false, text: 'キーボードのタッチ操作は再起動後にROMの標準に戻ります。' });
+    }
+    out.push(st.applied && st.klApplied && touchApplied ? { warn: false, text: '保存した設定は使用中です。' }
       : { warn: false, text: '保存した設定は再起動後に反映されます。' });
     out.push({ warn: false, text: '修飾キーの現在の割り当て：' + Object.keys(PHYSICAL)
       .map((scan) => `${PHYSICAL[scan]}は${roleName(st.klLive[scan] || '')}`).join('、') });
@@ -483,7 +512,7 @@
     const after = availableFromRoles(rolesOf(base, { ...map, ['kl:' + scan]: code }));
     const lost = ['shift', 'alt', 'ctrl', 'meta', 'sym', 'fn'].filter((g) => before.has(g) && !after.has(g));
     if (lost.length) out.push(`${lost.map(modifierLabel).join('、')}を押せるキーがなくなります。`);
-    const stranded = Object.keys(map).filter((id) => !id.startsWith('kl:') &&
+    const stranded = Object.keys(map).filter((id) => !id.startsWith('kl:') && !id.startsWith('tp:') &&
       unreachableParts(id.split(':')[0], after).length > 0 && unreachableParts(id.split(':')[0], before).length === 0);
     if (stranded.length) out.push(`押せなくなるレイヤーに${stranded.length}件の割り当てがあります（${stranded.slice(0, 3).join('、')}${stranded.length > 3 ? 'など' : ''}）。`);
     return out;

@@ -98,7 +98,40 @@ test('status lines parse into diagnostics', () => {
     'kl_base=42:SHIFT_LEFT\nkl_base=110:CTRL_LEFT\nkl_live=110:ESCAPE\nflag=update\n');
   assert.deepEqual(st, { kcmLoaded: '/system/usr/keychars/Generic.kcm', klLoaded: '/vendor/usr/keylayout/stmpe.kl',
     shadowedBy: ['/product/usr/keychars/stmpe.kcm'], conflicts: ['other'], applied: false, klApplied: true,
-    klEditable: true, flags: ['update'], klBase: { 42: 'SHIFT_LEFT', 110: 'CTRL_LEFT' }, klLive: { 110: 'ESCAPE' } });
+    klEditable: true, flags: ['update'], klBase: { 42: 'SHIFT_LEFT', 110: 'CTRL_LEFT' }, klLive: { 110: 'ESCAPE' },
+    tpSaved: 'rom', tpLive: 'rom', tpExcluded: '', tpForeign: [], tpConflicts: [] });
+  const tp = KCM.parseStatus('tp_saved=off\ntp_live=foreign\ntp_excluded=no\ntp_foreign=/system/etc/excluded-input-devices.xml\n' +
+    'tp_conflict_module=other\n');
+  assert.deepEqual([tp.tpSaved, tp.tpLive, tp.tpExcluded, tp.tpForeign, tp.tpConflicts],
+    ['off', 'foreign', 'no', ['/system/etc/excluded-input-devices.xml'], ['other']]);
+});
+
+test('the touch surface setting accepts only tp:mode=off', () => {
+  assert.deepEqual(KCM.validate({ 'tp:mode': 'off', 'sym:H': 'R_DPAD_LEFT' }), Object.assign(Object.create(null), { 'tp:mode': 'off', 'sym:H': 'R_DPAD_LEFT' }));
+  for (const bad of [{ 'tp:mode': 'on' }, { 'tp:mode': 'rom' }, { 'tp:speed': 'off' }, { 'tp:mode': 'R_TAB' }]) {
+    assert.throws(() => KCM.validate(bad), JSON.stringify(bad));
+  }
+});
+
+test('diagnostics tell whether the touch surface is off, pending, or blocked', () => {
+  const text = (s) => KCM.diagnose(KCM.parseStatus(GOOD_STATUS + s)).map((d) => (d.warn ? '!' : '') + d.text);
+  assert.ok(text('tp_saved=off\ntp_live=off\ntp_excluded=yes\n').includes('キーボードのタッチ操作はオフです。'));
+  const pending = text('tp_saved=off\ntp_live=rom\ntp_excluded=no\n');
+  assert.ok(pending.includes('キーボードのタッチ操作は再起動後にオフになります。'));
+  assert.ok(pending.includes('保存した設定は再起動後に反映されます。'), 'a pending touch change is not "in use"');
+  const unused = text('tp_saved=off\ntp_live=off\ntp_excluded=no\n');
+  assert.ok(unused.includes('!タッチ操作をオフにする設定は配置されていますが、Androidに使われていません。'), unused.join('\n'));
+  assert.ok(unused.every((t) => !t.includes('タッチ操作はオフです') && !t.includes('再起動後にオフ')), 'neither off nor pending');
+  assert.ok(text('tp_saved=rom\ntp_live=off\n').includes('キーボードのタッチ操作は再起動後にROMの標準に戻ります。'));
+  assert.ok(text('tp_saved=rom\ntp_live=rom\n').every((t) => !t.includes('タッチ')), 'the ROM default needs no line');
+  const blocked = KCM.diagnose(KCM.parseStatus(GOOD_STATUS + 'tp_live=foreign\ntp_excluded=yes\n' +
+    'tp_foreign=/system/etc/excluded-input-devices.xml\ntp_conflict_module=other\n'));
+  const warned = blocked.filter((d) => d.warn).map((d) => d.text);
+  assert.equal(warned.length, 3, warned.join('\n'));
+  assert.match(warned[0], /\/system\/etc\/excluded-input-devices\.xmlがあるため/);
+  assert.match(warned[1], /モジュールotherも/);
+  assert.match(warned[2], /このモジュール以外の設定で/);
+  assert.ok(blocked.findIndex((d) => !d.warn) > blocked.findLastIndex((d) => d.warn), 'problems come first');
 });
 
 test('save diff lists added, changed and removed assignments in id order', () => {
