@@ -7,6 +7,8 @@
 #   remap.sh status               installation diagnostics as key=value lines
 #   remap.sh verify               check that the stored originals can be regenerated
 #   remap.sh reboot               reboot the device so that saved maps take effect
+#   remap.sh touch-start          (re)start touchgestured if gesture mode is saved and in effect
+#   remap.sh touch-stop           stop touchgestured
 # ASSIGN is MODIFIERS:KEY=VALUE for the character map, e.g. sym:H=R_DPAD_LEFT (validated again
 # by patch.awk), or kl:SCANCODE=KEYCODE for a modifier key's role in the key layout, e.g.
 # kl:110=CTRL_LEFT (validated again by klpatch.awk), or tp:ID=VALUE for the keyboard's touch
@@ -39,6 +41,8 @@ TG="$BASE/bin/touchgestured"
 DST_TG_CONF="$BASE/touchgestured.conf"
 DST_TG_KL="$BASE/system/usr/keylayout/key2remap_touch_keys.kl"
 DST_TG_IDC="$BASE/system/usr/idc/key2remap_touch_pad.idc"
+TG_PID="$BASE/.touchgestured.pid"
+TG_LOG="$BASE/touchgestured.log"
 
 fail() { echo "$*" >&2; exit 1; }
 runawk() { if [ -x "$BB" ]; then LC_ALL=C "$BB" awk "$@"; else LC_ALL=C awk "$@"; fi; }
@@ -178,6 +182,37 @@ label_new_system_file() {
         echo "WARNING: ${1##*/}のSELinuxラベルを付けられませんでした。再起動後、診断でタッチ操作の設定が効いているか確かめてください。"
 }
 
+# touch_pid: the PID of the running touchgestured, or nothing. The PID file alone is not trusted,
+# since Android reuses PIDs: the process must still be this module's touchgestured.
+touch_pid() {
+    pid=$(cat "$TG_PID" 2>/dev/null) || return 0
+    case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+    tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -qF "$TG" && echo "$pid"
+    return 0
+}
+
+touch_stop() {
+    pid=$(touch_pid)
+    if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || :
+        for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(touch_pid)" ] || break; sleep 0.2; done
+    fi
+    rm -f "$TG_PID"
+}
+
+# touch_start: restart touchgestured when gesture mode is both saved and in effect (the live excluded
+# device list is this module's, marked gesture). Outside the active module directory (a pending
+# update being installed) nothing is started: the running module's daemon stays until the reboot.
+touch_start() {
+    [ "$BASE" = "$(cd "$R/data/adb/modules/$MODID" 2>/dev/null && pwd -P)" ] || return 0
+    touch_stop
+    [ "$(tp_mode "$DST_TP")" = gesture ] && [ "$(tp_mode "$LIVE_TP")" = gesture ] && [ -s "$DST_TG_CONF" ] || return 0
+    # setsid detaches it from the WebUI's shell, which may be killed once the command returns.
+    if command -v setsid >/dev/null; then detach=setsid; else detach=; fi
+    $detach "$TG" "$DST_TG_CONF" > "$TG_LOG" 2>&1 < /dev/null &
+    echo $! > "$TG_PID"
+}
+
 # roles PREFIX FILE: "PREFIX=SCAN:KEYCODE" for each physical modifier key mapped in FILE.
 roles() {
     [ -r "$2" ] || return 0
@@ -225,6 +260,11 @@ status() {
     live=$(tp_mode "$LIVE_TP")
     if [ -n "$live" ]; then echo "tp_live=$live"; elif [ -e "$LIVE_TP" ]; then echo tp_live=foreign; else echo tp_live=rom; fi
     tp_blockers
+    if [ -n "$(touch_pid)" ]; then echo tp_daemon=running
+    else
+        echo tp_daemon=stopped
+        [ ! -s "$TG_LOG" ] || echo "tp_daemon_log=$(tail -n 1 "$TG_LOG" | tr -d '\r')"
+    fi
     for f in disable update remove; do [ -e "$BASE/$f" ] && echo "flag=$f"; done
     return 0
 }
@@ -235,6 +275,8 @@ case "$cmd" in
     status) status; exit 0 ;;
     # svc goes through PowerManager: apps are shut down normally, unlike a bare reboot.
     reboot) svc power reboot || fail '再起動できませんでした。'; exit 0 ;;
+    touch-start) touch_start; exit 0 ;;
+    touch-stop) touch_stop; exit 0 ;;
     read|original|preview|save|verify) ;;
     *) fail '不明なコマンドです。' ;;
 esac
@@ -338,4 +380,6 @@ else
     rmdir "${DST_TG_KL%/*}" "${DST_TG_IDC%/*}" "$BASE/system/usr" 2>/dev/null || :
 fi
 sync
+# Gesture keys and thresholds take effect now; a mode change needs the reboot like the other files.
+touch_start
 echo OK

@@ -331,6 +331,57 @@ status_reports_gesture_mode() {
 check 'status reports gesture mode as saved and live' status_reports_gesture_mode
 remap save sym:H=R_DPAD_LEFT >/dev/null
 
+# touchgestured runs only while gesture mode is saved and in effect (the live excluded device list
+# is the module's, marked gesture). bin/touchgestured is the stub from module_files.
+live_gesture_list() { mkdir -p "$DEV/system/etc" && cp "$DST_TP" "$DEV/system/etc/"; }
+daemon_pid() { cat "$MOD/.touchgestured.pid" 2>/dev/null; }
+# alive PID: PID is a running (not zombie) touchgestured.
+alive() { tr '\000' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q 'bin/touchgestured'; }
+
+daemon_waits_for_reboot() {
+    rm -f "$MOD/daemon.calls"
+    set -f; remap save $GESTURES >/dev/null; set +f
+    remap touch-start && [ ! -e "$MOD/daemon.calls" ] && remap status | grep -qx tp_daemon=stopped
+}
+check 'touch-start starts nothing until gesture mode is in effect after a reboot' daemon_waits_for_reboot
+
+daemon_starts() {
+    live_gesture_list && remap touch-start && sleep 0.5 && pid=$(daemon_pid) && alive "$pid" &&
+        grep -q "^$pid .*/touchgestured.conf$" "$MOD/daemon.calls" && remap status | grep -qx tp_daemon=running
+}
+check 'touch-start starts touchgestured with the saved settings once gesture mode is in effect' daemon_starts
+
+save_restarts_daemon() {
+    old=$(daemon_pid)
+    remap save tp:mode=gesture tp:1_tap=ENTER >/dev/null && sleep 0.5 && new=$(daemon_pid) &&
+        [ -n "$new" ] && [ "$new" != "$old" ] && alive "$new" && ! alive "$old" && grep -qx 'bind 1 tap key 524' "$DST_TG_CONF"
+}
+check 'save restarts touchgestured, so new gesture keys work without a reboot' save_restarts_daemon
+
+save_off_stops_daemon() {
+    old=$(daemon_pid)
+    remap save tp:mode=off tp:1_tap=ENTER >/dev/null && ! alive "$old" && [ ! -e "$MOD/.touchgestured.pid" ] &&
+        remap status > "$WORK/status" && grep -qx tp_daemon=stopped "$WORK/status" &&
+        grep -qx 'tp_daemon_log=touchgestured: stub stopped' "$WORK/status"
+}
+check 'save leaving gesture mode stops touchgestured, and status shows its last log line' save_off_stops_daemon
+
+touch_stop_stops() {
+    remap save tp:mode=gesture tp:1_tap=ENTER >/dev/null && sleep 0.5 && pid=$(daemon_pid) && alive "$pid" &&
+        remap touch-stop && ! alive "$pid" && [ ! -e "$MOD/.touchgestured.pid" ]
+}
+check 'touch-stop stops touchgestured' touch_stop_stops
+
+stale_pid_left_alone() {
+    sleep 30 & other=$!
+    echo "$other" > "$MOD/.touchgestured.pid"
+    remap status | grep -qx tp_daemon=stopped && remap touch-stop && kill -0 "$other"; rc=$?
+    kill "$other"; return "$rc"
+}
+check 'a PID file naming another process is neither reported as running nor killed' stale_pid_left_alone
+rm -f "$DEV/system/etc/excluded-input-devices.xml"
+remap save sym:H=R_DPAD_LEFT >/dev/null
+
 reboots_through_power_manager() {
     rm -f "$DEV/svc.log"
     remap reboot && [ "$(cat "$DEV/svc.log")" = 'power reboot' ]

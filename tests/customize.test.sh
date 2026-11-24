@@ -130,7 +130,8 @@ update_keeps_gestures() {
     mkdir -p "$DEV/system/etc" && cp "$PREV/system/etc/excluded-input-devices.xml" "$DEV/system/etc/"
     installed_ok && cmp "$NEW/touchgestured.conf" "$PREV/touchgestured.conf" &&
         cmp "$NEW/system/usr/keylayout/key2remap_touch_keys.kl" "$PREV/system/usr/keylayout/key2remap_touch_keys.kl" &&
-        [ "$(sh "$NEW/remap.sh" read | sort | tr '\n' ' ')" = 'tp:1_swipe_left=DPAD_LEFT+shift tp:3_pass=on tp:mode=gesture ' ]
+        [ "$(sh "$NEW/remap.sh" read | sort | tr '\n' ' ')" = 'tp:1_swipe_left=DPAD_LEFT+shift tp:3_pass=on tp:mode=gesture ' ] &&
+        { [ ! -e "$NEW/daemon.calls" ] || { echo 'the module being installed started its daemon'; return 1; }; }
 }
 fresh_device; check 'an update keeps the gesture mode and its settings' update_keeps_gestures
 

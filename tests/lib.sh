@@ -109,14 +109,17 @@ SH
 # module_files DIR: the module as Magisk extracts it from the ZIP (src/ without generated data).
 # bin/touchgestured, an arm64 binary in the ZIP, is stood in for by a script: "check" runs
 # gesturetool's check of the same settings file, and starting the daemon records its pid and
-# arguments in DIR/daemon.calls and waits.
+# arguments in DIR/daemon.calls and waits for SIGTERM (as a shell, so its command line still
+# names bin/touchgestured).
 module_files() {
     mkdir -p "$1/bin" && cp -R "$ROOT/src/." "$1/" || return 1
     cat > "$1/bin/touchgestured" <<STUB
 #!/bin/sh
 if [ "\$1" = check ]; then exec "${GESTURETOOL:?run tests through tests/run.sh}" check "\$2" > /dev/null; fi
 echo "\$\$ \$*" >> "$1/daemon.calls"
-exec sleep 600
+echo "touchgestured: stub running" >&2
+trap 'echo "touchgestured: stub stopped" >&2; exit 0' TERM
+while :; do sleep 1; done
 STUB
     chmod 0755 "$1/bin/touchgestured"
 }
