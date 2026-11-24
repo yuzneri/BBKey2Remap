@@ -47,6 +47,13 @@ struct tg_state {
     int fingers, max_active;
     double ax, ay;   /* accumulated movement of the counted fingers, device units */
     double max_d2;   /* largest squared distance from the starting point so far */
+    struct { int64_t t; double x, y; } hist[TG_HISTORY]; /* (ax, ay) per frame, a ring */
+    int hist_len, hist_next;
+    /* continuous swipe */
+    bool swiping, committed; /* committed: swipe keys were sent, so it can no longer be a flick */
+    int axis;                /* 0: X, 1: Y */
+    double anchor;           /* position on the axis where the last step was counted */
+    int pending;             /* steps counted but held back while the touch may be a flick */
 };
 
 /* Starts with no fingers down. units_per_mm is the resolution of the X and Y axes. */

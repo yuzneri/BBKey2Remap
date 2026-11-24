@@ -119,6 +119,85 @@ check 'with gather_ms 0 the fingers are counted on the first frame' replays "gat
 check 'consecutive touches are recognised separately' replays "$TAPS" \
     '0 0=500,200\n100 -0\n300 0=300,200 1=700,200\n400 -0 -1\n' '100 1-finger tap key 0x1\n400 2-finger tap key 0x2\n'
 
+# stroke FROM TO X0,Y0 X1,Y1: script lines moving finger 0 in a straight line, a frame every 10 ms.
+stroke() {
+    awk -v a="$1" -v b="$2" -v p="$3" -v q="$4" 'BEGIN {
+        split(p, s, ","); split(q, e, ",")
+        for (t = a; t <= b; t += 10) {
+            f = b > a ? (t - a) / (b - a) : 1
+            printf "%d 0=%d,%d\\n", t, s[1] + (e[1] - s[1]) * f, s[2] + (e[2] - s[2]) * f
+        }
+    }'
+}
+
+SWIPES='bind 1 swipe up key 1\nbind 1 swipe down key 2\nbind 1 swipe left key 3\nbind 1 swipe right key 4\n'
+# 10 mm right in 500 ms: start_mm (2 mm, 42 units) is reached at 100 ms, then 5 mm at 250, 8 mm at 400.
+check 'a swipe sends its first key at start_mm and one more every step_mm' replays "$SWIPES" \
+    "$(stroke 0 500 100,200 310,200)500 -0\n" '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
+check 'upward movement (falling Y) is a swipe up' replays "$SWIPES" \
+    "$(stroke 0 100 500,300 500,237)100 -0\n" '70 1-finger swipe up key 0x1\n'
+check 'going back along the axis sends the opposite direction' replays "$SWIPES" \
+    "$(stroke 0 400 100,200 268,200)$(stroke 410 690 266,200 142,200)690 -0\n" \
+    '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n550 1-finger swipe left key 0x3\n690 1-finger swipe left key 0x3\n'
+check 'the first axis that reaches start_mm is kept for the whole swipe' replays "$SWIPES" \
+    "$(stroke 0 100 100,200 163,200)$(stroke 110 500 163,190 163,0)500 -0\n" '70 1-finger swipe right key 0x4\n'
+check 'an axis without bindings is not chosen' replays 'bind 1 swipe down key 2\n' \
+    "$(stroke 0 500 100,200 310,263)500 -0\n" '340 1-finger swipe down key 0x2\n'
+check 'a fast finger moving several steps in one frame sends a key per step' replays "$SWIPES" \
+    '0 0=100,200\n10 0=310,200\n500 -0\n' '10 1-finger swipe right key 0x4\n10 1-finger swipe right key 0x4\n10 1-finger swipe right key 0x4\n'
+check 'no swipe key is sent before hold_ms' replays "hold_ms 300\n$SWIPES" \
+    "$(stroke 0 500 100,200 310,200)500 -0\n" '300 1-finger swipe right key 0x4\n300 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
+check 'a finger that moved and stopped starts its swipe when hold_ms passes' replays "hold_ms 300\n$SWIPES" \
+    "$(stroke 0 100 100,200 205,200)600 -0\n" '300 1-finger swipe right key 0x4\n300 1-finger swipe right key 0x4\n'
+
+FLICKS='bind 1 flick up key 0x11\nbind 1 flick down key 0x12\nbind 1 flick left key 0x13\nbind 1 flick right key 0x14\nbind 1 flick up-left key 0x15\nbind 1 flick up-right key 0x16\nbind 1 flick down-left key 0x17\nbind 1 flick down-right key 0x18\n'
+# 10 mm in 40 ms is 250 mm/s, over flick_mm_s (150); 10 mm in 500 ms is 20 mm/s.
+check 'a fast movement ending in a lift is a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)40 -0\n" '40 1-finger flick right key 0x14\n'
+check 'a slow movement is not a flick' replays "$FLICKS" "$(stroke 0 500 100,200 310,200)500 -0\n" ''
+check 'a flick must cover start_mm' replays "$FLICKS" '0 0=500,200\n5 0=530,200\n10 -0\n' ''
+check 'a finger that stopped before lifting is not a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)200 -0\n" ''
+# NAME:CODE:FROM:TO. The last two lie 4 and 6 degrees inside a sector border (22.5 and 67.5 degrees).
+for dir in up:11:500,200:500,0 down:12:500,0:500,200 left:13:500,200:290,200 up-left:15:500,200:350,50 \
+    up-right:16:500,200:650,50 down-left:17:500,50:350,200 down-right:18:500,50:650,200 \
+    up-right:16:500,200:700,100 up:11:500,200:560,0; do
+    IFS=: read -r name code from to <<EOF
+$dir
+EOF
+    check "flicks are told apart in 8 directions: $name from $from to $to" replays "$FLICKS" \
+        "$(stroke 0 40 "$from" "$to")40 -0\n" "40 1-finger flick $name key 0x$code\n"
+done
+
+BOTH="$SWIPES$FLICKS"
+check 'with swipes and flicks bound, a fast flick sends only the flick' replays "$BOTH" \
+    "$(stroke 0 40 100,200 310,200)40 -0\n" '40 1-finger flick right key 0x14\n'
+check 'with swipes and flicks bound, a slow swipe sends only swipe keys' replays "$BOTH" \
+    "$(stroke 0 500 100,200 310,200)500 -0\n" '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
+check 'held-back swipe keys are sent once a fast finger stops' replays "$BOTH" \
+    "$(stroke 0 40 100,200 310,200)300 -0\n" '90 1-finger swipe right key 0x4\n90 1-finger swipe right key 0x4\n90 1-finger swipe right key 0x4\n'
+check 'after its first swipe key a touch is no longer a flick' replays "$BOTH" \
+    "$(stroke 0 500 100,200 310,200)$(stroke 510 540 310,200 520,200)540 -0\n" \
+    '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n520 1-finger swipe right key 0x4\n530 1-finger swipe right key 0x4\n540 1-finger swipe right key 0x4\n540 1-finger swipe right key 0x4\n'
+check 'a fast lift in a direction without a flick binding sends the held-back swipe keys' replays \
+    "${SWIPES}bind 1 flick up key 0x11\n" "$(stroke 0 40 100,200 310,200)40 -0\n" \
+    '40 1-finger swipe right key 0x4\n40 1-finger swipe right key 0x4\n40 1-finger swipe right key 0x4\n'
+
+check 'with more fingers bound, a swipe waits for gather_ms before its first key' replays "${SWIPES}bind 2 tap key 2\n" \
+    "$(stroke 0 500 100,200 310,200)500 -0\n" '150 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
+
+# gestures CONFIG LOG EXPECTED: the gesture names replaying a device recording gives, one per line.
+gestures() {
+    conf "$1"
+    got=$("$GESTURETOOL" replay "$WORK/g.conf" "$2" | cut -d' ' -f2-4) || return 1
+    [ "$got" = "$(printf "$3")" ] || { printf 'got:\n%s\n' "$got"; return 1; }
+}
+# With the default thresholds: an up-and-down swipe, a 7 mm swipe left and a 15 mm swipe right.
+check 'device recording: one-finger swipes with the default thresholds' gestures "$BOTH" \
+    "$FIXTURES/touch-swipes-1finger.getevent" \
+    "$(printf '1-finger swipe up\n%.0s' 1 2)\n$(printf '1-finger swipe down\n%.0s' 1 2)\n$(printf '1-finger swipe left\n%.0s' 1 2)\n$(printf '1-finger swipe right\n%.0s' 1 2 3 4 5)\n"
+check 'device recording: a 5.5 mm two-finger swipe up with the default thresholds' gestures \
+    'bind 2 swipe up key 1\nbind 2 swipe down key 2\nbind 3 tap key 3\n' "$FIXTURES/touch-2-and-3-fingers.getevent" \
+    '2-finger swipe up\n2-finger swipe up\n'
+
 # Device recordings: the finger counts must come out right, including the third finger that
 # landed 122 ms after the first. Taps are made easy here so that every touch reports its count.
 conf "tap_ms 600\nstart_mm 25\n$TAPS"

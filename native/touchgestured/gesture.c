@@ -2,9 +2,14 @@
 #include "gesture.h"
 
 #include <linux/input-event-codes.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MS(v) ((int64_t)(v) * 1000)
+/* Speed is measured over this much of the latest movement. */
+#define SPEED_WINDOW_US MS(50)
+#define PI 3.14159265358979323846
 
 void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_mm, const struct tg_sink *sink)
 {
@@ -29,6 +34,96 @@ static void emit(struct tg_state *st, enum tg_gesture g)
 
 static double start_units(const struct tg_state *st) { return st->cfg.start_mm * st->units_per_mm; }
 
+static bool swipes_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_SWIPE_UP, TG_SWIPE_RIGHT); }
+static bool flicks_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_FLICK_UP, TG_FLICK_DOWN_RIGHT); }
+
+static void record(struct tg_state *st)
+{
+    st->hist[st->hist_next].t = st->now;
+    st->hist[st->hist_next].x = st->ax;
+    st->hist[st->hist_next].y = st->ay;
+    st->hist_next = (st->hist_next + 1) % TG_HISTORY;
+    if (st->hist_len < TG_HISTORY) st->hist_len++;
+}
+
+/*
+ * Speed in mm/s over the last SPEED_WINDOW_US: from the newest frame at least that old (or the
+ * oldest one kept, for a younger touch) to the current position. A finger that stopped reports
+ * no frames, so its speed falls to 0 one window after its last frame.
+ */
+static double speed(const struct tg_state *st)
+{
+    int ref = (st->hist_next - st->hist_len + TG_HISTORY) % TG_HISTORY;
+    for (int i = 0; i < st->hist_len; i++) {
+        int k = (st->hist_next - 1 - i + TG_HISTORY) % TG_HISTORY;
+        if (st->hist[k].t <= st->now - SPEED_WINDOW_US) { ref = k; break; }
+    }
+    int64_t elapsed = st->now - st->hist[ref].t;
+    if (elapsed <= 0) return 0;
+    double d = hypot(st->ax - st->hist[ref].x, st->ay - st->hist[ref].y);
+    return d / st->units_per_mm / ((double)elapsed / 1e6);
+}
+
+static bool may_be_flick(const struct tg_state *st)
+{
+    return !st->committed && flicks_bound(st) && speed(st) >= st->cfg.flick_mm_s;
+}
+
+static void send_pending(struct tg_state *st)
+{
+    enum tg_gesture g = st->axis ? (st->pending < 0 ? TG_SWIPE_UP : TG_SWIPE_DOWN)
+                                 : (st->pending < 0 ? TG_SWIPE_LEFT : TG_SWIPE_RIGHT);
+    for (int n = abs(st->pending); n > 0; n--) emit(st, g);
+    st->pending = 0;
+    st->committed = true;
+}
+
+/*
+ * Continuous swipe: starts once the touch is hold_ms old and has moved start_mm along an axis that
+ * has a binding, which sends the first key. The axis is then fixed, and each further step_mm along
+ * it sends another key, in the opposite direction when the finger goes back.
+ */
+static void track(struct tg_state *st)
+{
+    if (!swipes_bound(st) || st->now - st->t0 < MS(st->cfg.hold_ms)) return;
+    const struct tg_binding *b = st->cfg.bind[st->fingers - 1];
+    double start = start_units(st), step = st->cfg.step_mm * st->units_per_mm;
+    if (!st->swiping) {
+        double cx = b[TG_SWIPE_LEFT].scancode || b[TG_SWIPE_RIGHT].scancode ? fabs(st->ax) : -1;
+        double cy = b[TG_SWIPE_UP].scancode || b[TG_SWIPE_DOWN].scancode ? fabs(st->ay) : -1;
+        if (cx < start && cy < start) return;
+        st->swiping = true;
+        st->axis = cy > cx;
+        double pos = st->axis ? st->ay : st->ax;
+        st->pending = pos < 0 ? -1 : 1;
+        st->anchor = copysign(start, pos);
+    }
+    double pos = st->axis ? st->ay : st->ax;
+    for (; pos - st->anchor >= step; st->anchor += step) st->pending++;
+    for (; pos - st->anchor <= -step; st->anchor -= step) st->pending--;
+    if (st->pending && !may_be_flick(st)) send_pending(st);
+}
+
+/* 8 directions of 45 degrees each, from the movement since the touch started (Y grows downwards). */
+static enum tg_gesture flick_direction(double ax, double ay)
+{
+    static const enum tg_gesture SECTORS[8] = {
+        TG_FLICK_RIGHT, TG_FLICK_UP_RIGHT, TG_FLICK_UP, TG_FLICK_UP_LEFT,
+        TG_FLICK_LEFT, TG_FLICK_DOWN_LEFT, TG_FLICK_DOWN, TG_FLICK_DOWN_RIGHT,
+    };
+    double a = atan2(-ay, ax);
+    int sector = (int)floor((a + PI / 8) / (PI / 4));
+    return SECTORS[(sector % 8 + 8) % 8];
+}
+
+/* Whether a gesture with more than n fingers has anything to do; if not, there is no need to wait. */
+static bool more_fingers_used(const struct tg_state *st, int n)
+{
+    for (int f = n + 1; f <= TG_MAX_FINGERS; f++)
+        if (st->cfg.pass[f - 1] || any_bound(st, f, 0, TG_GESTURE_COUNT - 1)) return true;
+    return false;
+}
+
 /* The fingers down when the gathering time ends are the gesture's fingers; later ones are ignored. */
 static void count_fingers(struct tg_state *st)
 {
@@ -46,9 +141,17 @@ static void finish(struct tg_state *st)
 {
     int64_t held = st->now - st->t0;
     st->phase = TG_DONE;
-    if (held < MS(st->cfg.hold_ms)) return;
+    if (held < MS(st->cfg.hold_ms) || st->committed) return;
     double start = start_units(st);
-    if (held <= MS(st->cfg.tap_ms) && st->max_d2 < start * start) emit(st, TG_TAP);
+    if (st->ax * st->ax + st->ay * st->ay >= start * start && may_be_flick(st)) {
+        enum tg_gesture g = flick_direction(st->ax, st->ay);
+        if (st->cfg.bind[st->fingers - 1][g].scancode) {
+            emit(st, g);
+            return;
+        }
+    }
+    if (st->pending) send_pending(st);
+    else if (held <= MS(st->cfg.tap_ms) && st->max_d2 < start * start) emit(st, TG_TAP);
 }
 
 static void begin_touch(struct tg_state *st, int active)
@@ -59,6 +162,9 @@ static void begin_touch(struct tg_state *st, int active)
     st->max_d2 = 0;
     st->max_active = active;
     st->fingers = 0;
+    st->hist_len = st->hist_next = 0;
+    st->swiping = st->committed = false;
+    st->pending = 0;
 }
 
 /* Adds the mean movement, since the previous frame, of the fingers that are in both frames. */
@@ -84,6 +190,7 @@ static void accumulate(struct tg_state *st)
     }
     double d2 = st->ax * st->ax + st->ay * st->ay;
     if (d2 > st->max_d2) st->max_d2 = d2;
+    record(st);
 }
 
 static void end_frame(struct tg_state *st)
@@ -99,9 +206,13 @@ static void end_frame(struct tg_state *st)
         if (st->lifted_in_frame) {
             count_fingers(st);
             if (st->phase == TG_TRACK) finish(st);
+        } else if (!more_fingers_used(st, st->max_active)) {
+            count_fingers(st);
+            if (st->phase == TG_TRACK) track(st);
         }
-    } else if (st->phase == TG_TRACK && st->counted_lifted) {
-        finish(st);
+    } else if (st->phase == TG_TRACK) {
+        if (st->counted_lifted) finish(st);
+        else track(st);
     }
     st->lifted_in_frame = st->counted_lifted = false;
 
@@ -138,6 +249,11 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
 int64_t tg_next_deadline(const struct tg_state *st)
 {
     if (st->phase == TG_GATHER) return st->t0 + MS(st->cfg.gather_ms);
+    if (st->phase != TG_TRACK || !swipes_bound(st)) return INT64_MAX;
+    /* A finger held still past hold_ms may already have moved far enough to start a swipe. */
+    if (!st->swiping && st->now < st->t0 + MS(st->cfg.hold_ms)) return st->t0 + MS(st->cfg.hold_ms);
+    /* Held-back steps are sent once the speed has fallen, which a still finger never reports. */
+    if (st->pending) return st->hist[(st->hist_next - 1 + TG_HISTORY) % TG_HISTORY].t + SPEED_WINDOW_US;
     return INT64_MAX;
 }
 
@@ -146,6 +262,7 @@ void tg_advance(struct tg_state *st, int64_t now_us)
     for (int64_t d; (d = tg_next_deadline(st)) <= now_us;) {
         if (d > st->now) st->now = d;
         if (st->phase == TG_GATHER) count_fingers(st);
+        else track(st);
     }
     if (now_us > st->now) st->now = now_us;
 }
