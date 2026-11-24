@@ -1,5 +1,6 @@
 :root{color-scheme:light dark;font:16px system-ui,sans-serif;--line:#8885;--accent:#3465a4;--soft:#3465a425;--warn:#c46a00;--panel:#8882}
 *{box-sizing:border-box}
+html{scroll-padding-bottom:80px}
 body{margin:0}
 main{max-width:680px;margin:auto;padding:20px 12px 36px}
 h1{font-size:27px;margin:8px 0}
@@ -11,7 +12,7 @@ section{border-top:1px solid var(--line);margin-top:18px;padding-top:8px}
 .views{display:grid;grid-template-columns:repeat(3,1fr);margin:14px 0 6px;border:1px solid var(--accent);border-radius:10px;overflow:hidden}
 .views button{border:0;border-radius:0;padding:12px 4px;font-weight:600}
 .views button+button{border-left:1px solid var(--accent)}
-.views button[aria-selected=true]{background:var(--accent);color:#fff}
+.views button[aria-pressed=true]{background:var(--accent);color:#fff}
 .views .badge{margin-left:4px}
 fieldset{border:0;margin:0;padding:0;min-width:0}
 fieldset:disabled{opacity:.65}
@@ -32,13 +33,15 @@ footer{position:sticky;bottom:0;margin-top:24px;padding:10px 0 12px;background:C
 .tabs{display:flex;flex-wrap:wrap;gap:4px;padding:4px 0 0;border-bottom:2px solid var(--accent)}
 .rowlabel{margin:12px 0 0;font-size:12px;font-weight:600;color:gray}
 .choices{display:grid;gap:6px;margin:8px 0}
-.choice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px}
-.choice input{margin:3px 0 0}
+.choice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px;text-align:left}
+.choice::before{content:"";flex:none;width:14px;height:14px;margin-top:3px;border:2px solid gray;border-radius:50%}
+.choice.checked::before{border-color:var(--accent);background:radial-gradient(var(--accent) 45%,transparent 50%)}
 .choice small{display:block;margin-top:2px;font-size:12px;letter-spacing:0;color:gray}
 .choice.checked{border-color:var(--accent);background:var(--soft)}
-.tab{flex:none;padding:8px 12px;border-radius:9px 9px 0 0;border-bottom:0;position:relative}
+.tab{flex:none;padding:8px 12px;border-radius:9px 9px 0 0;position:relative}
 .tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .badge{display:inline-block;min-width:18px;margin-left:6px;padding:0 5px;border-radius:9px;background:var(--warn);color:#fff;font-size:11px;line-height:18px}
+.tabs .badge{background:var(--line);color:inherit}
 details{margin:6px 0}
 summary{cursor:pointer;font-size:14px;padding:4px 0}
 .mods{display:grid;grid-template-columns:1fr 1fr;gap:8px}

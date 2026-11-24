@@ -16,12 +16,12 @@
 </header>
 <div id="status" role="status">接続中…</div>
 <fieldset id="editor" disabled>
-<nav id="views" class="views" role="tablist" aria-label="設定の種類">
-<button type="button" role="tab" data-view="keys">キー</button>
-<button type="button" role="tab" data-view="touch">タッチ操作</button>
-<button type="button" role="tab" data-view="changes">変更と診断</button>
+<nav id="views" class="views" aria-label="設定の種類">
+<button type="button" id="viewbtn-keys" data-view="keys" aria-controls="view-keys" aria-pressed="true">キー</button>
+<button type="button" id="viewbtn-touch" data-view="touch" aria-controls="view-touch" aria-pressed="false">タッチ操作</button>
+<button type="button" id="viewbtn-changes" data-view="changes" aria-controls="view-changes" aria-pressed="false">変更と診断</button>
 </nav>
-<div id="view-keys" class="view" role="tabpanel">
+<div id="view-keys" class="view" role="region" aria-label="キー">
 <section>
 <p class="rowlabel" id="tabsLabel">一緒に押す修飾キー</p>
 <div id="tabs" class="tabs" role="tablist" aria-labelledby="tabsLabel"></div>
@@ -39,7 +39,7 @@
 <button id="resetLayer" type="button">このレイヤーをリセット</button>
 </div>
 </section>
-<section id="panel">
+<section id="panel" hidden>
 <h2 id="target"></h2>
 <p id="current"></p>
 <ul id="warnings"></ul>
@@ -62,7 +62,7 @@
 <pre id="keylog"></pre>
 </section>
 </div>
-<div id="view-touch" class="view" role="tabpanel">
+<div id="view-touch" class="view" role="region" aria-label="タッチ操作" hidden>
 <section id="touch">
 <h2>キーボードのタッチ操作</h2>
 <div id="touchModes" class="choices" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
@@ -70,6 +70,7 @@
 <div id="gestureEditor" hidden>
 <p class="rowlabel" id="layerTabsLabel">一緒に押す修飾キー</p>
 <div id="layerTabs" class="tabs" role="radiogroup" aria-labelledby="layerTabsLabel"></div>
+<div class="tabpanel">
 <p id="touchLayerHint" class="hint"></p>
 <p class="rowlabel" id="fingerTabsLabel">指の本数</p>
 <div id="fingerTabs" class="tabs" role="radiogroup" aria-labelledby="fingerTabsLabel"></div>
@@ -89,6 +90,7 @@
 </div>
 <div class="toolbar"><button id="gestureClear" type="button">割り当てを外す</button></div>
 </div>
+</div>
 <details id="thresholdBox">
 <summary>しきい値（誤動作を減らす）</summary>
 <p class="hint">空欄は既定値です。しきい値だけの変更は、保存するとすぐ効きます。</p>
@@ -97,7 +99,7 @@
 </div>
 </section>
 </div>
-<div id="view-changes" class="view" role="tabpanel">
+<div id="view-changes" class="view" role="region" aria-label="変更と診断" hidden>
 <section>
 <h2>変更一覧</h2>
 <p class="hint">保存後に再起動するか確認します。モジュールを無効化して再起動すると、導入前の状態に戻ります。</p>
@@ -124,7 +126,7 @@
 </section>
 </div>
 <footer>
-<button id="save" type="button">保存（再起動後に反映）</button>
+<button id="save" type="button" disabled>保存する変更はありません</button>
 </footer>
 </fieldset>
 </main>

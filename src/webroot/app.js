@@ -492,12 +492,16 @@ function fallbackText(g) {
 /** Mode buttons, and in gesture mode the gesture assignments and the thresholds. */
 function renderTouch() {
   const mode = map['tp:mode'] || 'rom';
-  // A mode is a setting, not a part of the page to show, so it is a radio button rather than a tab.
+  // A mode is a setting, not a part of the page to show, so it looks like a radio button rather than
+  // a tab. It is a button with the radio role, not an <input type="radio">: arrow keys change a
+  // focused radio input, and swipes on the keyboard surface can send them.
   $('touchModes').replaceChildren(...TOUCH_MODES.map((m) => {
-    const input = el('input', { type: 'radio', name: 'touchMode', checked: m.id === mode, onchange: () => setTouchMode(m.id) });
-    input.disabled = m.id !== 'rom' && m.id !== mode && touchBlockers.length > 0;
-    return el('label', { className: 'choice' + (m.id === mode ? ' checked' : '') + (input.disabled ? ' unavailable' : '') },
-      input, el('span', {}, m.label, el('small', { textContent: m.hint })));
+    const b = el('button', { type: 'button', className: 'choice' + (m.id === mode ? ' checked' : ''), onclick: () => setTouchMode(m.id) },
+      el('span', {}, m.label, el('small', { textContent: m.hint })));
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(m.id === mode));
+    b.disabled = m.id !== 'rom' && m.id !== mode && touchBlockers.length > 0;
+    return b;
   }));
   $('touchHint').textContent = touchBlockers.length ? `${touchBlockers.join('、')}があるため、切り替えられません。` : '';
   $('gestureEditor').hidden = mode !== 'gesture';
@@ -543,7 +547,13 @@ function renderFingers() {
     const fallback = own(map, id) ? '' : fallbackText(g.id);
     const value = own(map, id) ? map[id] : fallbackValue(g.id);
     const { code, mods, once } = KCM.parseTouchKey(value);
-    const b = button('', () => { touchGesture = g.id; touchCategory = categoryFor(g.id); render(); },
+    const b = button('', () => {
+      touchGesture = g.id;
+      touchCategory = categoryFor(g.id);
+      render();
+      // The editor opens below the table, where the fixed save button may cover it.
+      $('gesturePalette').scrollIntoView({ block: 'nearest' });
+    },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
     b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(g.id)));
     b.setAttribute('aria-pressed', String(touchGesture === g.id));
@@ -692,6 +702,7 @@ function setThreshold(t, input, final) {
  * the tap that leaves it, and re-rendering would replace the button being tapped.
  */
 function thresholdChanged(msg) {
+  renderViews();
   renderChanges();
   status(msg + 'しきい値だけの変更は、常駐プログラムが動いていれば、保存するとすぐ効きます。');
 }
@@ -774,9 +785,9 @@ function renderViews() {
   const counts = { keys: diff.length - touch, touch, changes: 0 };
   for (const b of $('views').children) {
     const v = b.dataset.view;
-    b.setAttribute('aria-selected', String(v === view));
+    b.setAttribute('aria-pressed', String(v === view));
     b.replaceChildren(b.dataset.label || (b.dataset.label = b.textContent));
-    if (counts[v]) b.append(el('span', { className: 'badge', textContent: String(counts[v]) }));
+    if (counts[v]) b.append(el('span', { className: 'badge', textContent: String(counts[v]), ariaLabel: `未保存${counts[v]}件` }));
     $('view-' + v).hidden = v !== view;
   }
   $('save').textContent = diff.length ? `保存（${diff.length}件）` : '保存する変更はありません';
@@ -784,6 +795,11 @@ function renderViews() {
 }
 
 function showView(v) {
+  // A key pressed in another view must not change the key being edited, which is out of sight.
+  if (capture) {
+    setCapture('');
+    status('キーの取得をやめました。');
+  }
   view = v;
   render();
   window.scrollTo(0, 0);
