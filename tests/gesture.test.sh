@@ -115,23 +115,31 @@ check 'the printed settings read back unchanged' accepts "$(cat "$WORK/dump.conf
 
 # touches SCRIPT: converts a touch script to `getevent -lt` lines on stdout. One script line is
 # one frame: "MS SLOT=X,Y ... -SLOT ...". SLOT=X,Y lands or moves a finger, -SLOT lifts it.
-# 21 units are 1 mm, as on the device.
+# 21 units are 1 mm, as on the device, which also presses BTN_TOUCH and BTN_TOOL_FINGER with the
+# first finger on the surface and lets them go with the last.
 touches() {
     printf "$1" | awk '
-        function ev(type, code, v) { printf "[%6d.%06d] %s %s %08x\n", 1000 + int(t / 1000), (t % 1000) * 1000, type, code, v }
+        function stamp() { return sprintf("[%6d.%06d]", 1000 + int(t / 1000), (t % 1000) * 1000) }
+        function ev(type, code, v) { printf "%s %s %s %08x\n", stamp(), type, code, v }
+        function btn(state) { printf "%s EV_KEY BTN_TOUCH %s\n%s EV_KEY BTN_TOOL_FINGER %s\n", stamp(), state, stamp(), state }
         {
             t = $1
+            before = n
             for (i = 2; i <= NF; i++) {
                 if ($i ~ /^-/) {
                     s = substr($i, 2)
-                    ev("EV_ABS", "ABS_MT_SLOT", s); ev("EV_ABS", "ABS_MT_TRACKING_ID", 4294967295); down[s] = 0
+                    ev("EV_ABS", "ABS_MT_SLOT", s); ev("EV_ABS", "ABS_MT_TRACKING_ID", 4294967295)
+                    if (down[s]) n--
+                    down[s] = 0
                     continue
                 }
                 split($i, a, /[=,]/); s = a[1]
                 ev("EV_ABS", "ABS_MT_SLOT", s)
-                if (!down[s]) { ev("EV_ABS", "ABS_MT_TRACKING_ID", ++id); down[s] = 1 }
+                if (!down[s]) { ev("EV_ABS", "ABS_MT_TRACKING_ID", ++id); down[s] = 1; n++ }
                 ev("EV_ABS", "ABS_MT_POSITION_X", a[2]); ev("EV_ABS", "ABS_MT_POSITION_Y", a[3])
             }
+            if (!before && n) btn("DOWN")
+            if (before && !n) btn("UP")
             ev("EV_SYN", "SYN_REPORT", 0)
         }'
 }
@@ -329,7 +337,8 @@ check 'other finger counts are still recognised next to a passthrough' \
     replays 'pass 2\nbind 1 tap key 1\n' '0 0=300,200\n100 -0\n' '100 1-finger tap key 0x1\n'
 
 # The second touch starts without ABS_MT_SLOT because the device is still on slot 1. (The first
-# touch selects its slot itself; the slot in effect before it is 0.)
+# touch selects its slot itself; the slot in effect before it is 0.) The log has no BTN_TOUCH, so
+# each replay presses it first.
 cat > "$WORK/slot.log" <<'EOF'
 [  1000.000000] EV_ABS ABS_MT_SLOT 00000001
 [  1000.000000] EV_ABS ABS_MT_TRACKING_ID 00000001
@@ -345,8 +354,10 @@ cat > "$WORK/slot.log" <<'EOF'
 [  1000.550000] EV_ABS ABS_MT_TRACKING_ID ffffffff
 [  1000.550000] EV_SYN SYN_REPORT 00000000
 EOF
-{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/slot.log" | sed -n 1,7p
-  echo '500 pass EV_ABS ABS_MT_SLOT 00000001'; as_passed "$WORK/slot.log" | sed -n '8,$p'; } > "$WORK/slot.expected"
+{ printf '0 pass EV_ABS ABS_MT_SLOT 00000000\n0 pass EV_KEY BTN_TOUCH DOWN\n0 pass EV_KEY BTN_TOOL_FINGER DOWN\n'
+  as_passed "$WORK/slot.log" | sed -n 1,7p
+  printf '500 pass EV_ABS ABS_MT_SLOT 00000001\n500 pass EV_KEY BTN_TOUCH DOWN\n500 pass EV_KEY BTN_TOOL_FINGER DOWN\n'
+  as_passed "$WORK/slot.log" | sed -n '8,$p'; } > "$WORK/slot.expected"
 check 'a passthrough starts by selecting the slot the device is on' passes 'pass 1\n' "$WORK/slot.log" "$WORK/slot.expected"
 
 # Swipes set to scroll: the touch goes to the ROM from its start once it moves that way.
@@ -382,7 +393,7 @@ check 'the next touch after a scroll is recognised afresh' next_after_scroll
 # 600 frames 1 ms apart while gather_ms (500) waits: 2400 events, more than are kept.
 { touches "$(awk 'BEGIN { for (t = 0; t < 600; t++) printf "%d 0=%d,200\\n", t, 300 + t % 2 }')600 -0\n"
   touches '0 0=300,200\n50 -0\n' | sed 's/^\[  1000/[  1001/'; } > "$WORK/long.log"
-{ echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/long.log" | tail -n 8; } > "$WORK/long.expected"
+{ echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/long.log" | tail -n 12; } > "$WORK/long.expected"
 check 'a touch with more events than the buffer holds is dropped, and the next one passes' \
     passes 'pass 1\nbind 2 tap key 2\ngather_ms 500\n' "$WORK/long.log" "$WORK/long.expected"
 
@@ -390,11 +401,11 @@ check 'a touch with more events than the buffer holds is dropped, and the next o
   echo '[  1000.010000] EV_SYN SYN_DROPPED 00000000'
   touches '20 0=330,200\n30 0=340,200\n40 -0\n'
   touches '0 0=300,200\n50 -0\n' | sed 's/^\[  1000/[  1001/'; } > "$WORK/dropped.log"
-{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | sed -n 1,8p
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | sed -n 1,10p
   printf '10 pass EV_ABS ABS_MT_SLOT 00000000\n10 pass EV_ABS ABS_MT_TRACKING_ID ffffffff\n'
   for b in BTN_TOUCH BTN_TOOL_FINGER BTN_TOOL_DOUBLETAP BTN_TOOL_TRIPLETAP BTN_TOOL_QUADTAP; do echo "10 pass EV_KEY $b UP"; done
   echo '10 pass EV_SYN SYN_REPORT 00000000'
-  echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | tail -n 8; } > "$WORK/dropped.expected"
+  echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | tail -n 12; } > "$WORK/dropped.expected"
 check 'SYN_DROPPED lifts the passed fingers and ignores the rest of the touch' \
     passes 'pass 1\n' "$WORK/dropped.log" "$WORK/dropped.expected"
 
@@ -495,6 +506,34 @@ touches "$(stroke 0 40 500,400 517,359)40 -0\n" > "$WORK/short-flick.log"
 { echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/short-flick.log"; } > "$WORK/short-flick.expected"
 check 'a flick too short to start a swipe, in a scroll direction, is passed through and not sent' \
     passes "${SCROLL}bind 1 flick up key 0x11\n" "$WORK/short-flick.log" "$WORK/short-flick.expected"
+
+# The finger on Alt is a contact too, down before the swipe (as recorded on the device): it presses
+# BTN_TOUCH and is not handed to the ROM.
+key_finger() {
+    conf 'mod 56 alt\nbind alt 1 swipe up scroll\nbind 1 swipe left key 3\n'
+    { touches "0 0=100,300\n$(stroke 500 800 500,400 500,100 1)800 -1\n$(stroke 1000 1300 500,200 374,200 1)1300 -1\n1500 -0\n"
+      keys '300 KEY_LEFTALT DOWN\n1600 KEY_LEFTALT UP\n'; } | sort -s -t']' -k1,1 > "$WORK/touch.log"
+    "$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log" > "$WORK/got"
+}
+scroll_beside_key_finger_touches() {
+    key_finger && grep -qx '500 pass EV_KEY BTN_TOUCH DOWN' "$WORK/got" && grep -qx '500 pass EV_KEY BTN_TOOL_FINGER DOWN' "$WORK/got"
+}
+check 'a scroll beside a finger on a key presses BTN_TOUCH on the virtual touchpad' scroll_beside_key_finger_touches
+scroll_ends_without_key_finger() {
+    key_finger && grep -qx '800 pass EV_KEY BTN_TOUCH UP' "$WORK/got" &&
+        [ "$(awk '$2 == "pass" { t = $1 } END { print t }' "$WORK/got")" = 800 ] &&
+        ! grep -q 'pass EV_ABS ABS_MT_TRACKING_ID 00000001' "$WORK/got" &&
+        grep -q '1-finger swipe left key 0x3 alt$' "$WORK/got"
+}
+check 'a scroll ends when its finger lifts, though a finger stays on a key, and the next swipe sends keys' scroll_ends_without_key_finger
+modifier_during_scroll() {
+    conf 'mod 42 shift\nbind 1 swipe up scroll\n'
+    { touches "$(stroke 0 600 500,400 500,100)600 -0\n"; keys '300 KEY_LEFTSHIFT DOWN\n700 KEY_LEFTSHIFT UP\n'; } |
+        sort -s -t']' -k1,1 > "$WORK/touch.log"
+    "$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log" > "$WORK/got" &&
+        [ "$(awk '$2 == "pass" { t = $1 } END { print t }' "$WORK/got")" = 600 ] && grep -qx '600 pass EV_KEY BTN_TOUCH UP' "$WORK/got"
+}
+check 'Shift pressed while scrolling leaves the touch with the ROM until its finger lifts' modifier_during_scroll
 
 # scroll_layer CONFIG KEYS: whether the touch swiping up, with KEYS, is passed through without a key.
 # keys_layer CONFIG KEYS: whether it sends keys and is not passed through.

@@ -40,6 +40,7 @@ struct tg_sink {
 struct tg_contact {
     bool active, has_pos, counted, in_prev;
     bool on_key; /* was down when a key was pressed: taken as the finger on that key until lifted */
+    bool passed; /* belongs to the touch passed through to the ROM */
     int32_t x, y, px, py; /* current and previous-frame position */
 };
 

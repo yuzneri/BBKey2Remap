@@ -171,9 +171,11 @@ static void pass(struct tg_state *st, int64_t t_us, uint16_t type, uint16_t code
 }
 
 /*
- * Hands the touch to the ROM from its start. Protocol B leaves out ABS_MT_SLOT when the slot has
- * not changed, so the replay begins by selecting the slot the device was on, which the virtual
- * touchpad cannot otherwise know.
+ * Hands the touch to the ROM from its start, without the fingers on keys. Protocol B leaves out
+ * ABS_MT_SLOT when the slot has not changed, so the replay begins by selecting the slot the device
+ * was on, which the virtual touchpad cannot otherwise know. Likewise BTN_TOUCH goes down only with
+ * the first finger on the surface: when that was a finger on a key, which is not passed, the
+ * virtual touchpad would take the passed fingers as hovering, so the replay presses it first.
  */
 static void start_passthrough(struct tg_state *st)
 {
@@ -182,7 +184,15 @@ static void start_passthrough(struct tg_state *st)
         return;
     }
     st->phase = TG_PASS;
-    pass(st, st->buf[0].t_us, EV_ABS, ABS_MT_SLOT, st->buf_slot);
+    for (int s = 0; s < TG_SLOTS; s++) st->c[s].passed = st->c[s].active && !st->c[s].on_key;
+    int64_t t = st->buf[0].t_us;
+    pass(st, t, EV_ABS, ABS_MT_SLOT, st->buf_slot);
+    bool touching = false;
+    for (int i = 0; i < st->buf_len; i++) touching = touching || (st->buf[i].type == EV_KEY && st->buf[i].code == BTN_TOUCH);
+    if (!touching) {
+        pass(st, t, EV_KEY, BTN_TOUCH, 1);
+        pass(st, t, EV_KEY, BTN_TOOL_FINGER, 1);
+    }
     for (int i = 0; i < st->buf_len; i++) st->sink.pass(st->sink.ctx, &st->buf[i]);
     st->buf_len = 0;
 }
@@ -276,6 +286,8 @@ static bool keeping(const struct tg_state *st)
     return st->phase == TG_GATHER || (st->phase == TG_TRACK && !st->committed);
 }
 
+static void release_passthrough(struct tg_state *st, int64_t t_us);
+
 static void end_frame(struct tg_state *st)
 {
     int active = 0;
@@ -300,10 +312,23 @@ static void end_frame(struct tg_state *st)
     }
     st->lifted_in_frame = st->counted_lifted = false;
 
-    /* A passed-through touch belongs to the ROM until every finger, on a key or not, is lifted. */
+    /*
+     * A passed-through touch belongs to the ROM until its fingers are lifted, also those that went
+     * onto a key meanwhile (Shift while scrolling is the ROM's to handle). A finger already on a key
+     * when it started is not part of it, so the touch ends without that finger, which the next
+     * touch then also leaves out, as it does outside a passthrough.
+     */
     bool ended = !active;
-    if (st->phase == TG_PASS)
-        for (int s = 0; s < TG_SLOTS; s++) ended = ended && !(st->c[s].active && st->c[s].has_pos);
+    if (st->phase == TG_PASS) {
+        bool others = false;
+        ended = true;
+        for (int s = 0; s < TG_SLOTS; s++) {
+            if (!st->c[s].active) continue;
+            if (st->c[s].passed) ended = false;
+            else others = true;
+        }
+        if (ended && others) release_passthrough(st, st->now);
+    }
     if (ended) {
         st->phase = TG_IDLE;
         for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = false;
@@ -359,6 +384,8 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
         if (c->active && !c->on_key) st->lifted_in_frame = true;
         if (c->active && c->counted) st->counted_lifted = true;
         c->active = ev->value >= 0;
+        /* A finger landing on a passed-through touch was handed to the ROM with it. */
+        c->passed = st->phase == TG_PASS && c->active;
         c->counted = c->on_key = false;
         /* The kernel keeps a slot's position for the next contact and leaves out an axis whose
          * value did not change, so the old position stays valid. */
@@ -398,9 +425,13 @@ void tg_key_event(struct tg_state *st, const struct tg_event *ev)
         if (modifier) return;
         release_passthrough(st, ev->t_us);
     }
-    if (st->phase == TG_GATHER || st->phase == TG_TRACK || st->phase == TG_PASS)
-        /* Nothing sent yet under a modifier means the touch was its finger: start over without it. */
+    if (st->phase == TG_GATHER || st->phase == TG_TRACK || st->phase == TG_PASS) {
+        /* Nothing sent yet under a modifier means the touch was its finger: start over without it,
+         * and without its events, which a passthrough of the next touch must not replay. */
         st->phase = modifier && !st->committed ? TG_IDLE : TG_DONE;
+        st->buf_len = 0;
+        st->buf_overflow = false;
+    }
     if (!modifier) st->last_key_us = ev->t_us;
 }
 

@@ -1,6 +1,6 @@
 id=key2_remap_gui
 name=KEY2 Remap
-version=1.1-dev7
-versionCode=17
+version=1.1-dev8
+versionCode=18
 author=KEY2 custom
 description=BlackBerry KEY2のキー割り当てと修飾キーをWebUI Xで編集（再起動で反映）
