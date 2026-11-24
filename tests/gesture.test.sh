@@ -60,6 +60,11 @@ check 'pass set twice is rejected' rejects 'pass 2\npass 2\n' 'pass 2 is set twi
 check 'a physical modifier key takes a single modifier' rejects 'mod 42 ctrl+shift\n' 'modifier must be'
 check 'a gesture may be bound in a modifier layer' accepts 'bind shift 1 swipe left key 0x100 ctrl\nbind sym 2 tap key 3\nmod 100 sym\n' \
     "${DEFAULTS}bind shift 1 swipe left key 0x100 ctrl\nbind sym 2 tap key 0x3\nmod 100 sym\n"
+check 'a swipe may send its key once per touch' accepts 'bind 1 swipe up key 1 once\nbind shift 1 swipe left key 0x100 ctrl+shift once\n' \
+    "${DEFAULTS}bind 1 swipe up key 0x1 once\nbind shift 1 swipe left key 0x100 ctrl+shift once\n"
+check 'once is refused for a flick' rejects 'bind 1 flick up key 1 once\n' 'once is only for swipes'
+check 'once is refused for a tap' rejects 'bind 1 tap key 1 once\n' 'once is only for swipes'
+check 'once comes after the modifiers' rejects 'bind 1 swipe up key 1 once ctrl\n' 'bind ends with key'
 check 'a gesture bound twice in one layer is rejected' rejects 'bind alt 1 tap key 1\nbind alt 1 tap key 2\n' 'alt 1-finger tap is bound twice'
 check 'the same gesture may be bound in different layers' accepts 'bind 1 tap key 1\nbind ctrl 1 tap key 2\n' \
     "${DEFAULTS}bind 1 tap key 0x1\nbind ctrl 1 tap key 0x2\n"
@@ -220,6 +225,20 @@ check 'a fast lift in a direction without a flick binding sends the held-back sw
     "${SWIPES}bind 1 flick up key 0x11\n" "$(stroke 0 40 100,200 310,200)40 -0\n" \
     '40 1-finger swipe right key 0x4\n40 1-finger swipe right key 0x4\n40 1-finger swipe right key 0x4\n'
 
+# A swipe set to send once: its key comes at start_mm only, however far the finger goes.
+ONCE='bind 1 swipe up key 1 once\nbind 1 swipe down key 2\nbind 1 swipe left key 3\nbind 1 swipe right key 4 once\n'
+check 'a once-only swipe sends its key at start_mm and no more' replays "$ONCE" \
+    "$(stroke 0 500 100,200 310,200)500 -0\n" '100 1-finger swipe right key 0x4\n'
+check 'going back after a once-only swipe follows the opposite direction setting' replays "$ONCE" \
+    "$(stroke 0 300 500,400 500,232)$(stroke 310 610 500,232 500,400)610 -0\n" \
+    '80 1-finger swipe up key 0x1\n430 1-finger swipe down key 0x2\n540 1-finger swipe down key 0x2\n'
+# Right is once-only, left repeats: right, back left twice, then right again sends nothing more.
+check 'a once-only swipe is sent once per touch, even after going back and forth' replays "$ONCE" \
+    "$(stroke 0 200 100,200 268,200)$(stroke 210 410 268,200 100,200)$(stroke 420 620 100,200 268,200)620 -0\n" \
+    '50 1-finger swipe right key 0x4\n290 1-finger swipe left key 0x3\n360 1-finger swipe left key 0x3\n'
+check 'the next touch can send the once-only key again' replays "$ONCE" \
+    "$(stroke 0 100 100,200 163,200)100 -0\n$(stroke 300 400 100,200 163,200)400 -0\n" \
+    '70 1-finger swipe right key 0x4\n370 1-finger swipe right key 0x4\n'
 check 'with more fingers bound, a swipe waits for gather_ms before its first key' replays "${SWIPES}bind 2 tap key 2\n" \
     "$(stroke 0 500 100,200 310,200)500 -0\n" '150 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n400 1-finger swipe right key 0x4\n'
 

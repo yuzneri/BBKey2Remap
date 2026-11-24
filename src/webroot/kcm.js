@@ -127,6 +127,11 @@
     if (/^tp:[123]_pass$/.test(id)) return v === 'on';
     if (!TOUCH_GESTURE.test(id)) return false;
     const [code, ...mods] = v.split('+');
+    // "+once" (last) makes a swipe send its key once per touch; flicks and taps send once anyway.
+    if (mods[mods.length - 1] === 'once') {
+      if (!id.includes('_swipe_')) return false;
+      mods.pop();
+    }
     return /^[A-Z0-9][A-Z0-9_]*$/.test(code) && mods.every((m, i) => TOUCH_MODIFIERS.includes(m) && mods.indexOf(m) === i);
   }
 
@@ -151,21 +156,21 @@
     return `${layer}${m[2]}本指で${TOUCH_KINDS[g.kind]}${ARROWS[g.dir] || ''}`;
   }
 
-  /** A gesture's key value "CODE[+mod...]" as {code, mods}; mods in TOUCH_MODIFIERS order. */
+  /** A gesture's key value "CODE[+mod...][+once]" as {code, mods, once}; mods in TOUCH_MODIFIERS order. */
   function parseTouchKey(v) {
-    const [code, ...mods] = (v || '').split('+');
-    return { code, mods: TOUCH_MODIFIERS.filter((m) => mods.includes(m)) };
+    const [code, ...rest] = (v || '').split('+');
+    return { code, mods: TOUCH_MODIFIERS.filter((m) => rest.includes(m)), once: rest.includes('once') };
   }
 
-  /** The value for key CODE with modifiers MODS, which may come in any order. */
-  function formatTouchKey(code, mods) {
-    return [code, ...TOUCH_MODIFIERS.filter((m) => mods.includes(m))].join('+');
+  /** The value for key CODE with modifiers MODS, which may come in any order, sent once if ONCE. */
+  function formatTouchKey(code, mods, once = false) {
+    return [code, ...TOUCH_MODIFIERS.filter((m) => mods.includes(m)), ...(once ? ['once'] : [])].join('+');
   }
 
-  /** "Ctrl+Shift+←" for a gesture's key value. */
+  /** "Ctrl+Shift+←", or "PgUp（1回）" for a swipe that sends once, for a gesture's key value. */
   function touchKeyText(v) {
-    const { code, mods } = parseTouchKey(v);
-    return [...mods.map((m) => MODIFIER_NAMES[m]), shortName(code)].join('+');
+    const { code, mods, once } = parseTouchKey(v);
+    return [...mods.map((m) => MODIFIER_NAMES[m]), shortName(code)].join('+') + (once ? '（1回）' : '');
   }
 
   /**

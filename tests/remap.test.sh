@@ -324,6 +324,14 @@ check 'all 195 gestures of all layers get distinct scan codes below KEY_MAX, cle
 for bad in tp:shift_step_mm=3 tp:alt_tap_ms=100; do
     check "a threshold cannot have a layer: $bad" refused 'タッチ操作の設定が正しくありません' remap save "$bad"
 done
+once_saved() {
+    remap save tp:mode=gesture tp:1_swipe_up=PAGE_UP+once tp:shift_1_swipe_left=MOVE_HOME+shift+once >/dev/null &&
+        grep -qx 'bind 1 swipe up key 512 once' "$DST_TG_CONF" && grep -qx 'bind shift 1 swipe left key 553 shift once' "$DST_TG_CONF" &&
+        grep -qx 'key 512 PAGE_UP' "$DST_TG_KL" && "$KLTOOL" check "$DST_TG_KL" >/dev/null &&
+        [ "$(remap read | grep '_swipe_' | sort | tr '\n' ' ')" = 'tp:1_swipe_up=PAGE_UP+once tp:shift_1_swipe_left=MOVE_HOME+shift+once ' ]
+}
+check 'a once-only swipe is saved and read back' once_saved
+check 'once on a tap is refused by the daemon check' refused 'タッチ操作の設定が正しくないため' remap save tp:1_tap=ENTER+once
 check 'passthrough is not per layer' refused 'タッチ操作の設定が正しくありません' remap save tp:shift_1_pass=on
 check 'an unknown layer is refused' refused 'タッチ操作の設定が正しくありません' remap save tp:meta_1_tap=ENTER
 check 'a layer binding next to passthrough of its finger count is refused by the daemon check' refused \

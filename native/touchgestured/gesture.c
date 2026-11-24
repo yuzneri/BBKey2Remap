@@ -101,7 +101,12 @@ static void send_pending(struct tg_state *st)
     enum tg_gesture g = st->axis ? (st->pending < 0 ? TG_SWIPE_UP : TG_SWIPE_DOWN)
                                  : (st->pending < 0 ? TG_SWIPE_LEFT : TG_SWIPE_RIGHT);
     /* Steps in a direction without a key send nothing, so the touch may still become a flick. */
-    for (int n = abs(st->pending); n > 0; n--) st->committed |= emit(st, g);
+    int n = abs(st->pending);
+    if (binding(st, st->fingers, g)->once) {
+        if (st->sent_once[g]) n = 0;
+        else if (n) n = 1, st->sent_once[g] = true;
+    }
+    for (; n > 0; n--) st->committed |= emit(st, g);
     st->pending = 0;
 }
 
@@ -216,6 +221,7 @@ static void begin_touch(struct tg_state *st, int active)
     st->fingers = 0;
     st->swiping = st->committed = false;
     st->pending = 0;
+    memset(st->sent_once, 0, sizeof st->sent_once);
     if (st->now - st->last_key_us < MS(st->cfg.after_key_ms)) st->phase = TG_DONE;
 }
 

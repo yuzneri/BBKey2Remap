@@ -124,10 +124,20 @@ test('gestures: the 13 of touchgestured, their names, and their key values', () 
   assert.equal(KCM.gestureName('tp:2_flick_upleft'), '2本指で払う↖');
   assert.equal(KCM.gestureName('tp:1_tap'), '1本指でタップ');
   for (const g of KCM.TOUCH_GESTURES) assert.ok(KCM.validate({ ['tp:3_' + g.id]: 'ENTER' }), g.id);
-  assert.deepEqual(KCM.parseTouchKey('DPAD_LEFT+shift+ctrl'), { code: 'DPAD_LEFT', mods: ['ctrl', 'shift'] });
+  assert.deepEqual(KCM.parseTouchKey('DPAD_LEFT+shift+ctrl'), { code: 'DPAD_LEFT', mods: ['ctrl', 'shift'], once: false });
   assert.equal(KCM.formatTouchKey('DPAD_LEFT', ['meta', 'ctrl']), 'DPAD_LEFT+ctrl+meta');
   assert.equal(KCM.formatTouchKey('ENTER', []), 'ENTER');
   assert.equal(KCM.touchKeyText('DPAD_LEFT+ctrl+shift'), 'Ctrl+Shift+←');
+  assert.deepEqual(KCM.parseTouchKey('PAGE_UP+once+ctrl'), { code: 'PAGE_UP', mods: ['ctrl'], once: true });
+  assert.deepEqual(KCM.parseTouchKey('PAGE_UP'), { code: 'PAGE_UP', mods: [], once: false });
+  assert.equal(KCM.formatTouchKey('PAGE_UP', ['shift'], true), 'PAGE_UP+shift+once');
+  assert.equal(KCM.formatTouchKey('PAGE_UP', ['shift']), 'PAGE_UP+shift');
+  assert.equal(KCM.touchKeyText('PAGE_UP+once'), 'PgUp（1回）');
+  assert.ok(KCM.validate({ 'tp:1_swipe_up': 'PAGE_UP+once', 'tp:alt_2_swipe_left': 'MOVE_HOME+ctrl+once' }));
+  for (const bad of [{ 'tp:1_tap': 'ENTER+once' }, { 'tp:1_flick_up': 'PAGE_UP+once' }, { 'tp:1_swipe_up': 'PAGE_UP+once+once' },
+    { 'tp:1_swipe_up': 'PAGE_UP+once+ctrl' }]) {
+    assert.throws(() => KCM.validate(bad), JSON.stringify(bad));
+  }
 });
 
 test('thresholds are checked against the range touchgestured reports', () => {

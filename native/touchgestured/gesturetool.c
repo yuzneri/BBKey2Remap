@@ -76,8 +76,8 @@ static void dump(const struct tg_config *c)
                 if (!b->scancode) continue;
                 char mods[32];
                 tg_mods_format(b->mods, mods, sizeof mods);
-                printf("bind %s%s%d %s key 0x%x%s%s\n", tg_layer_name(l), l ? " " : "", f + 1, tg_gesture_name(g),
-                       b->scancode, b->mods ? " " : "", b->mods ? mods : "");
+                printf("bind %s%s%d %s key 0x%x%s%s%s\n", tg_layer_name(l), l ? " " : "", f + 1, tg_gesture_name(g),
+                       b->scancode, b->mods ? " " : "", b->mods ? mods : "", b->once ? " once" : "");
             }
     }
     for (int i = 0; i < c->nmods; i++) {

@@ -57,11 +57,14 @@ FNR == NR {
         }
         fingers = substr(id, 1, 1); gesture = substr(id, 3)
         parts = split(value, p, "+")
+        once = p[parts] == "once"
+        if (once) parts--
         modifiers = ""
         for (i = 2; i <= parts; i++) modifiers = modifiers (i > 2 ? "+" : "") p[i]
         i = layer * 39 + (fingers - 1) * 13 + index_of[gesture]
         code = i < 192 ? 512 + i : 744 + i - 192
-        print "bind " (layer ? layer_name " " : "") fingers " " conf_name[gesture] " key " code (modifiers != "" ? " " modifiers : "")
+        print "bind " (layer ? layer_name " " : "") fingers " " conf_name[gesture] " key " code \
+            (modifiers != "" ? " " modifiers : "") (once ? " once" : "")
         print "key " code " " p[1] > kl
     }
 }

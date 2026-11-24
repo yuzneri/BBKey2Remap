@@ -148,7 +148,8 @@ static int parse_threshold(struct parser *p, int i, char **tok, int ntok)
 }
 
 /*
- * bind [LAYER] FINGERS swipe|flick DIRECTION key SCANCODE [MODS]
+ * bind [LAYER] FINGERS swipe DIRECTION key SCANCODE [MODS] [once]
+ * bind [LAYER] FINGERS flick DIRECTION key SCANCODE [MODS]
  * bind [LAYER] FINGERS tap key SCANCODE [MODS]
  */
 static int parse_bind(struct parser *p, char **tok, int ntok)
@@ -171,8 +172,11 @@ static int parse_bind(struct parser *p, char **tok, int ntok)
     int g = 0;
     while (g < TG_GESTURE_COUNT && strcmp(name, GESTURE_NAMES[g])) g++;
     if (g == TG_GESTURE_COUNT) return fail(p, "unknown gesture \"%s\"", name);
+    bool once = ntok - at >= 3 && !strcmp(tok[ntok - 1], "once");
+    if (once) ntok--;
     if (ntok - at < 2 || ntok - at > 3 || strcmp(tok[at], "key"))
-        return fail(p, "bind ends with key SCANCODE [MODIFIERS]");
+        return fail(p, "bind ends with key SCANCODE [MODIFIERS] [once]");
+    if (once && g > TG_SWIPE_RIGHT) return fail(p, "once is only for swipes, which repeat");
     long code;
     if (!parse_code(tok[at + 1], MAX_SCANCODE, &code)) return fail(p, "scancode must be 1-0x%x", MAX_SCANCODE);
     uint8_t mods = 0;
@@ -183,6 +187,7 @@ static int parse_bind(struct parser *p, char **tok, int ntok)
     if (p->cfg->pass[fingers - 1]) return pass_conflict(p, fingers);
     b->scancode = (uint16_t)code;
     b->mods = mods;
+    b->once = once;
     return 0;
 }
 
@@ -206,10 +211,10 @@ static int parse_line(struct parser *p, char *line)
 {
     line += strspn(line, " \t");
     if (*line == '#') return 0;
-    char *tok[8];
+    char *tok[10];
     int ntok = 0;
     for (char *save, *t = strtok_r(line, " \t", &save); t; t = strtok_r(NULL, " \t", &save)) {
-        if (ntok == 8) return fail(p, "too many words");
+        if (ntok == 10) return fail(p, "too many words");
         tok[ntok++] = t;
     }
     if (!ntok) return 0;

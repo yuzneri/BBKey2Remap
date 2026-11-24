@@ -14,7 +14,8 @@
 # kl:110=CTRL_LEFT (validated again by klpatch.awk), or tp:ID=VALUE for the keyboard's touch
 # surface: tp:mode=off|gesture, a threshold such as tp:step_mm=3, a gesture's key such as
 # tp:1_swipe_left=DPAD_LEFT+shift (with a layer prefix such as tp:shift_1_swipe_left for the key
-# while that physical modifier is held), or tp:3_pass=on (checked again by touchgestured check).
+# while that physical modifier is held, and +once last for a swipe that sends it once per touch),
+# or tp:3_pass=on (checked again by touchgestured check).
 set -eu
 case $0 in */*) dir=${0%/*} ;; *) dir=. ;; esac
 BASE=$(cd "$dir" && pwd -P)

@@ -468,8 +468,8 @@ function allGestureIds(f) { return KCM.TOUCH_LAYERS.flatMap((l) => gestureIds(f,
 function fallbackText(g) {
   const base = map[KCM.gestureId('', touchFingers, g)];
   if (!touchLayer || !base) return '';
-  const { code, mods } = KCM.parseTouchKey(base);
-  return KCM.touchKeyText(KCM.formatTouchKey(code, touchLayer === 'sym' ? mods : [...mods, touchLayer]));
+  const { code, mods, once } = KCM.parseTouchKey(base);
+  return KCM.touchKeyText(KCM.formatTouchKey(code, touchLayer === 'sym' ? mods : [...mods, touchLayer], once));
 }
 
 /** Mode buttons, and in gesture mode the gesture assignments and the thresholds. */
@@ -554,20 +554,25 @@ function renderGesturePanel() {
   const id = touchGesture && KCM.gestureId(touchLayer, touchFingers, touchGesture);
   $('gesturePanel').hidden = !id || own(map, `tp:${touchFingers}_pass`);
   if ($('gesturePanel').hidden) return;
-  const { code, mods } = KCM.parseTouchKey(map[id]);
+  const { code, mods, once } = KCM.parseTouchKey(map[id]);
   const fallback = own(map, id) ? '' : fallbackText(touchGesture);
   $('gestureTarget').textContent = KCM.gestureName(id) + '：' +
     (own(map, id) ? KCM.touchKeyText(map[id]) : fallback ? `割り当てなし（${fallback}を送る）` : '割り当てなし');
   $('gestureMods').replaceChildren(...['ctrl', 'shift', 'alt', 'meta'].map((m) => {
     const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) });
-    box.onchange = () => setGestureKey(id, code, box.checked ? [...mods, m] : mods.filter((x) => x !== m));
+    box.onchange = () => setGestureKey(id, code, box.checked ? [...mods, m] : mods.filter((x) => x !== m), once);
     return el('label', { className: 'check' }, box, document.createTextNode(m[0].toUpperCase() + m.slice(1)));
   }));
+  // Only swipes repeat; flicks and taps send their key once anyway.
+  $('gestureOnceBox').hidden = !touchGesture.startsWith('swipe_');
+  $('gestureOnce').checked = once;
+  $('gestureOnce').disabled = !own(map, id);
+  $('gestureOnce').onchange = () => setGestureKey(id, code, mods, $('gestureOnce').checked);
   $('gestureCats').replaceChildren(...KCM.PALETTE.map((c) => button(c.label, () => { touchCategory = c.id; render(); },
     'tab' + (c.id === touchCategory ? ' active' : ''))));
   const cat = KCM.PALETTE.find((c) => c.id === touchCategory) || KCM.PALETTE[0];
   $('gesturePalette').replaceChildren(...cat.codes.map((c) => {
-    const b = button(KCM.shortName(c), () => setGestureKey(id, c, mods), 'pal' + (code === c ? ' active' : ''));
+    const b = button(KCM.shortName(c), () => setGestureKey(id, c, mods, once), 'pal' + (code === c ? ' active' : ''));
     b.title = ACTIONS[c] || c;
     return b;
   }));
@@ -575,8 +580,8 @@ function renderGesturePanel() {
   $('gestureClear').onclick = () => { delete map[id]; changed(`${KCM.gestureName(id)}の割り当てを外しました。`); };
 }
 
-function setGestureKey(id, code, mods) {
-  map[id] = KCM.formatTouchKey(code, mods);
+function setGestureKey(id, code, mods, once) {
+  map[id] = KCM.formatTouchKey(code, mods, once);
   changed(`${KCM.gestureName(id)}を${KCM.touchKeyText(map[id])}にしました。`);
 }
 
