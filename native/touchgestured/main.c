@@ -375,7 +375,7 @@ int main(int argc, char **argv)
 
     d.kbd_fd = create_keyboard(&d.cfg);
     if (d.kbd_fd < 0) return 1;
-    for (int f = 0; f < TG_MAX_FINGERS; f++) d.passes = d.passes || d.cfg.pass[f];
+    d.passes = tg_config_passes(&d.cfg);
 
     int64_t retry_at = 0;
     while (!stopping) {

@@ -148,6 +148,7 @@ static int parse_threshold(struct parser *p, int i, char **tok, int ntok)
 
 /*
  * bind [LAYER] FINGERS swipe DIRECTION key SCANCODE [MODS] [once]
+ * bind [LAYER] FINGERS swipe DIRECTION scroll
  * bind [LAYER] FINGERS flick DIRECTION key SCANCODE [MODS]
  * bind [LAYER] FINGERS tap key SCANCODE [MODS]
  */
@@ -171,19 +172,24 @@ static int parse_bind(struct parser *p, char **tok, int ntok)
     int g = 0;
     while (g < TG_GESTURE_COUNT && strcmp(name, GESTURE_NAMES[g])) g++;
     if (g == TG_GESTURE_COUNT) return fail(p, "unknown gesture \"%s\"", name);
+    struct tg_binding *b = &p->cfg->bind[layer][fingers - 1][g];
+    if (tg_bound(b)) return fail(p, "%s%s%d-finger %s is bound twice", LAYER_NAMES[layer], layer ? " " : "", fingers, name);
+    if (p->cfg->pass[fingers - 1]) return pass_conflict(p, fingers);
+    if (ntok - at == 1 && !strcmp(tok[at], "scroll")) {
+        if (g > TG_SWIPE_RIGHT) return fail(p, "scroll is only for swipes");
+        b->scroll = true;
+        return 0;
+    }
     bool once = ntok - at >= 3 && !strcmp(tok[ntok - 1], "once");
     if (once) ntok--;
     if (ntok - at < 2 || ntok - at > 3 || strcmp(tok[at], "key"))
-        return fail(p, "bind ends with key SCANCODE [MODIFIERS] [once]");
+        return fail(p, "bind ends with key SCANCODE [MODIFIERS] [once], or scroll");
     if (once && g > TG_SWIPE_RIGHT) return fail(p, "once is only for swipes, which repeat");
     long code;
     if (!parse_code(tok[at + 1], MAX_SCANCODE, &code)) return fail(p, "scancode must be 1-0x%x", MAX_SCANCODE);
     uint8_t mods = 0;
     if (ntok - at == 3 && parse_mods(tok[at + 2], TG_MOD_CTRL | TG_MOD_SHIFT | TG_MOD_ALT | TG_MOD_META, &mods))
         return fail(p, "modifiers must be ctrl, shift, alt and meta joined by +");
-    struct tg_binding *b = &p->cfg->bind[layer][fingers - 1][g];
-    if (b->scancode) return fail(p, "%s%s%d-finger %s is bound twice", LAYER_NAMES[layer], layer ? " " : "", fingers, name);
-    if (p->cfg->pass[fingers - 1]) return pass_conflict(p, fingers);
     b->scancode = (uint16_t)code;
     b->mods = mods;
     b->once = once;
@@ -227,11 +233,22 @@ static int parse_line(struct parser *p, char *line)
         if (p->cfg->pass[fingers - 1]) return fail(p, "pass %d is set twice", fingers);
         for (int l = 0; l < TG_LAYER_COUNT; l++)
             for (int g = 0; g < TG_GESTURE_COUNT; g++)
-                if (p->cfg->bind[l][fingers - 1][g].scancode) return pass_conflict(p, fingers);
+                if (tg_bound(&p->cfg->bind[l][fingers - 1][g])) return pass_conflict(p, fingers);
         p->cfg->pass[fingers - 1] = true;
         return 0;
     }
     return fail(p, "unknown setting \"%s\"", tok[0]);
+}
+
+bool tg_config_passes(const struct tg_config *c)
+{
+    for (int f = 0; f < TG_MAX_FINGERS; f++) {
+        if (c->pass[f]) return true;
+        for (int l = 0; l < TG_LAYER_COUNT; l++)
+            for (int g = TG_SWIPE_UP; g <= TG_SWIPE_RIGHT; g++)
+                if (c->bind[l][f][g].scroll) return true;
+    }
+    return false;
 }
 
 void tg_config_print_thresholds(FILE *out)

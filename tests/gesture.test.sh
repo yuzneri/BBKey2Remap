@@ -42,6 +42,14 @@ check 'a threshold value must be a plain number' rejects 'step_mm 3mm\n' 'step_m
 check 'a threshold needs exactly one value' rejects 'step_mm 3 4\n' 'step_mm takes one value'
 check 'finger counts other than 1-3 are rejected' rejects 'bind 4 tap key 1\n' 'finger count must be 1-3'
 check 'unknown gestures are rejected' rejects 'bind 1 swipe up-left key 1\n' 'unknown gesture "swipe up-left"'
+check 'a swipe may scroll in the ROM' accepts 'bind 1 swipe up scroll\nbind shift 2 swipe left scroll\n' \
+    "${DEFAULTS}bind 1 swipe up scroll\nbind shift 2 swipe left scroll\n"
+check 'scroll is refused for a flick' rejects 'bind 1 flick up scroll\n' 'scroll is only for swipes'
+check 'scroll is refused for a tap' rejects 'bind 1 tap scroll\n' 'scroll is only for swipes'
+check 'scroll takes no modifiers' rejects 'bind 1 swipe up scroll ctrl\n' 'bind ends with key'
+check 'scroll takes no once' rejects 'bind 1 swipe up scroll once\n' 'bind ends with key'
+check 'a swipe cannot both scroll and send a key' rejects 'bind 1 swipe up scroll\nbind 1 swipe up key 1\n' 'bound twice'
+check 'scroll and passthrough of the same finger count conflict' rejects 'pass 1\nbind 1 swipe up scroll\n' 'pass'
 check 'flicks have no diagonals' rejects 'bind 1 flick up-left key 1\n' 'unknown gesture "flick up-left"'
 check 'a swipe needs a direction' rejects 'bind 1 swipe\n' 'swipe needs a direction'
 check 'a tap takes no direction' rejects 'bind 1 tap up key 1\n' 'bind ends with key'
@@ -340,6 +348,36 @@ EOF
   echo '500 pass EV_ABS ABS_MT_SLOT 00000001'; as_passed "$WORK/slot.log" | sed -n '8,$p'; } > "$WORK/slot.expected"
 check 'a passthrough starts by selecting the slot the device is on' passes 'pass 1\n' "$WORK/slot.log" "$WORK/slot.expected"
 
+# Swipes set to scroll: the touch goes to the ROM from its start once it moves that way.
+SCROLL='bind 1 swipe up scroll\nbind 1 swipe down key 2\nbind 1 swipe left key 3\nbind 1 swipe right key 4\n'
+touches "$(stroke 0 300 500,400 500,100)300 -0\n" > "$WORK/up.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/up.log"; } > "$WORK/up.expected"
+check 'a swipe set to scroll passes the whole touch through' passes "$SCROLL" "$WORK/up.log" "$WORK/up.expected"
+check 'a fast swipe set to scroll is passed through, not taken as a flick' \
+    passes "${SCROLL}bind 1 flick up key 0x11\n" "$WORK/up.log" "$WORK/up.expected"
+touches "$(stroke 0 40 500,400 500,100)40 -0\n" > "$WORK/flick-up.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/flick-up.log"; } > "$WORK/flick-up.expected"
+check 'a flick in a scroll direction is passed through for the ROM to scroll on' \
+    passes "${SCROLL}bind 1 flick up key 0x11\n" "$WORK/flick-up.log" "$WORK/flick-up.expected"
+check 'the other axis still sends keys next to a scroll' replays "$SCROLL" \
+    "$(stroke 0 300 100,200 226,200)300 -0\n" '100 1-finger swipe right key 0x4\n250 1-finger swipe right key 0x4\n'
+check 'after a key was sent, the scroll direction sends nothing' replays "$SCROLL" \
+    "$(stroke 0 300 500,100 500,232)$(stroke 310 610 500,232 500,100)610 -0\n" '100 1-finger swipe down key 0x2\n240 1-finger swipe down key 0x2\n'
+# Down has no key, so going down first sends nothing and the touch can still scroll.
+touches "$(stroke 0 200 500,200 500,263)$(stroke 210 500 500,263 500,50)500 -0\n" > "$WORK/back.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/back.log"; } > "$WORK/back.expected"
+check 'a touch that went an unbound way first can still scroll, from its start' \
+    passes 'bind 1 swipe up scroll\nbind 1 swipe left key 3\n' "$WORK/back.log" "$WORK/back.expected"
+check 'a tap still works next to a scroll' replays "${SCROLL}bind 1 tap key 5\n" '0 0=500,200\n100 -0\n' '100 1-finger tap key 0x5\n'
+next_after_scroll() {
+    conf "$SCROLL"
+    touches "$(stroke 0 300 500,400 500,100)300 -0\n$(stroke 600 900 100,200 226,200)900 -0\n" > "$WORK/touch.log"
+    got=$("$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log") || return 1
+    [ "$(printf '%s\n' "$got" | grep -c ' pass ')" -eq "$(($(wc -l < "$WORK/up.log") + 1))" ] &&
+        [ "$(printf '%s\n' "$got" | grep ' key ')" = "$(printf '700 1-finger swipe right key 0x4\n850 1-finger swipe right key 0x4')" ]
+}
+check 'the next touch after a scroll is recognised afresh' next_after_scroll
+
 # 600 frames 1 ms apart while gather_ms (500) waits: 2400 events, more than are kept.
 { touches "$(awk 'BEGIN { for (t = 0; t < 600; t++) printf "%d 0=%d,200\\n", t, 300 + t % 2 }')600 -0\n"
   touches '0 0=300,200\n50 -0\n' | sed 's/^\[  1000/[  1001/'; } > "$WORK/long.log"
@@ -425,6 +463,28 @@ replays_keys() {
 }
 
 MODS='mod 42 shift\nmod 54 shift\nmod 29 ctrl\n'
+
+# scroll_layer CONFIG KEYS: whether the touch swiping up, with KEYS, is passed through without a key.
+# keys_layer CONFIG KEYS: whether it sends keys and is not passed through.
+swipe_up_with_keys() {
+    conf "$1"
+    { touches "$(stroke 100 400 500,400 500,100)400 -0\n"; keys "$2"; } | sort -s -t']' -k1,1 > "$WORK/touch.log"
+    "$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log" > "$WORK/got"
+}
+keys_layer() { swipe_up_with_keys "$@" && grep -q ' key ' "$WORK/got" && ! grep -q ' pass ' "$WORK/got"; }
+scroll_layer() {
+    conf "$1"
+    { touches "$(stroke 100 400 500,400 500,100)400 -0\n"; keys "$2"; } | sort -s -t']' -k1,1 > "$WORK/touch.log"
+    got=$("$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log") || return 1
+    printf '%s\n' "$got" | grep -q ' pass ' && ! printf '%s\n' "$got" | grep -q ' key '
+}
+check 'a scroll in the Shift layer is taken while Shift is held' \
+    scroll_layer 'mod 42 shift\nbind 1 swipe up key 1\nbind shift 1 swipe up scroll\n' '0 KEY_LEFTSHIFT DOWN\n500 KEY_LEFTSHIFT UP\n'
+check 'a key in the Shift layer is sent instead of the base scroll while Shift is held' \
+    keys_layer 'mod 42 shift\nbind 1 swipe up scroll\nbind shift 1 swipe up key 1\n' '0 KEY_LEFTSHIFT DOWN\n500 KEY_LEFTSHIFT UP\n'
+check 'the base scroll is taken while Shift is held when the Shift layer has nothing' \
+    scroll_layer 'mod 42 shift\nbind 1 swipe up scroll\n' '0 KEY_LEFTSHIFT DOWN\n500 KEY_LEFTSHIFT UP\n'
+
 check 'a touch starting within after_key_ms of a key press is ignored' replays_keys "$MODS$TAPS" \
     '100 0=500,200\n150 -0\n400 0=500,200\n450 -0\n' '0 KEY_H DOWN\n50 KEY_H UP\n' '450 1-finger tap key 0x1\n'
 check 'autorepeat is not a new key press' replays_keys "$MODS$TAPS" \

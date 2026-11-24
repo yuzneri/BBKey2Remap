@@ -63,7 +63,7 @@ struct tg_state {
     double anchor;           /* position on the axis where the last step was counted */
     int pending;             /* steps counted but held back while the touch may be a flick */
     bool sent_once[TG_SWIPE_RIGHT + 1]; /* [swipe gesture]: its once-only key was sent in this touch */
-    /* events since the touch started, replayed if it is passed through */
+    /* events since the touch started, replayed if it is passed through; kept until a key is sent */
     struct tg_event buf[TG_PASS_BUFFER];
     int buf_len, buf_slot;   /* buf_slot: the slot in effect before the first buffered event */
     bool buf_overflow;

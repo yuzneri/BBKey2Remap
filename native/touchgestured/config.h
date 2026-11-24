@@ -28,14 +28,18 @@ enum { TG_MOD_CTRL = 1, TG_MOD_SHIFT = 2, TG_MOD_ALT = 4, TG_MOD_META = 8, TG_MO
 enum tg_layer { TG_LAYER_BASE, TG_LAYER_SHIFT, TG_LAYER_ALT, TG_LAYER_CTRL, TG_LAYER_SYM, TG_LAYER_COUNT };
 
 /*
- * A key to send: a scancode of the virtual keyboard plus TG_MOD_* bits. scancode 0 means unbound.
- * once: a swipe sends it only on its first step of a touch instead of on every step.
+ * What a gesture does: send a key, a scancode of the virtual keyboard plus TG_MOD_* bits, or, for
+ * a swipe with scroll, hand the touch to the ROM, which scrolls. Neither means unbound.
+ * once: a swipe sends its key only on its first step of a touch instead of on every step.
  */
 struct tg_binding {
     uint16_t scancode;
     uint8_t mods;
     bool once;
+    bool scroll;
 };
+
+static inline bool tg_bound(const struct tg_binding *b) { return b->scancode || b->scroll; }
 
 struct tg_config {
     double start_mm;      /* movement before a touch counts as a swipe */
@@ -71,6 +75,9 @@ const char *tg_gesture_name(enum tg_gesture g);
 
 /* "shift", "alt", "ctrl", "sym", or "" for the base layer. */
 const char *tg_layer_name(enum tg_layer l);
+
+/* Whether some touches go to the ROM (pass or a scroll binding), which needs the virtual touchpad. */
+bool tg_config_passes(const struct tg_config *c);
 
 /* The TG_MOD_* bit of the modifier that selects layer L (0 for the base layer). */
 uint8_t tg_layer_mod(enum tg_layer l);

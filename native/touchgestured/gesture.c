@@ -40,7 +40,7 @@ static enum tg_layer layer_of(const struct tg_state *st, int fingers, enum tg_ge
 {
     uint8_t held = st->layer_mods | held_mods(st);
     for (int l = TG_LAYER_SHIFT; l < TG_LAYER_COUNT; l++)
-        if ((held & tg_layer_mod(l)) && st->cfg.bind[l][fingers - 1][g].scancode) return l;
+        if ((held & tg_layer_mod(l)) && tg_bound(&st->cfg.bind[l][fingers - 1][g])) return l;
     return TG_LAYER_BASE;
 }
 
@@ -52,7 +52,7 @@ static const struct tg_binding *binding(const struct tg_state *st, int fingers, 
 static bool any_bound(const struct tg_state *st, int fingers, int first, int last)
 {
     for (int g = first; g <= last; g++)
-        if (binding(st, fingers, g)->scancode) return true;
+        if (tg_bound(binding(st, fingers, g))) return true;
     return false;
 }
 
@@ -94,10 +94,24 @@ static bool may_be_flick(const struct tg_state *st)
     return !st->committed && flicks_bound(st) && speed(st) >= st->cfg.flick_mm_s;
 }
 
+static void start_passthrough(struct tg_state *st);
+
+/* The swipe the counted steps go in. */
+static enum tg_gesture pending_swipe(const struct tg_state *st)
+{
+    return st->axis ? (st->pending < 0 ? TG_SWIPE_UP : TG_SWIPE_DOWN) : (st->pending < 0 ? TG_SWIPE_LEFT : TG_SWIPE_RIGHT);
+}
+
 static void send_pending(struct tg_state *st)
 {
-    enum tg_gesture g = st->axis ? (st->pending < 0 ? TG_SWIPE_UP : TG_SWIPE_DOWN)
-                                 : (st->pending < 0 ? TG_SWIPE_LEFT : TG_SWIPE_RIGHT);
+    enum tg_gesture g = pending_swipe(st);
+    /* A scroll hands the whole touch to the ROM, unless keys were sent already: those and the
+     * ROM's scrolling of the same movement would both happen, so then it does nothing. */
+    if (binding(st, st->fingers, g)->scroll) {
+        st->pending = 0;
+        if (!st->committed) start_passthrough(st);
+        return;
+    }
     /* Steps in a direction without a key send nothing, so the touch may still become a flick. */
     int n = abs(st->pending);
     if (binding(st, st->fingers, g)->once) {
@@ -111,7 +125,8 @@ static void send_pending(struct tg_state *st)
 /*
  * Continuous swipe: starts once the touch is hold_ms old and has moved start_mm along an axis that
  * has a binding, which sends the first key. The axis is then fixed, and each further step_mm along
- * it sends another key, in the opposite direction when the finger goes back.
+ * it sends another key, in the opposite direction when the finger goes back. A scroll does not
+ * wait to see whether the touch is a flick: the ROM scrolls a flick on as it would its own.
  */
 static void track(struct tg_state *st)
 {
@@ -130,7 +145,7 @@ static void track(struct tg_state *st)
     double pos = st->axis ? st->ay : st->ax;
     for (; pos - st->anchor >= step; st->anchor += step) st->pending++;
     for (; pos - st->anchor <= -step; st->anchor -= step) st->pending--;
-    if (st->pending && !may_be_flick(st)) send_pending(st);
+    if (st->pending && (!may_be_flick(st) || binding(st, st->fingers, pending_swipe(st))->scroll)) send_pending(st);
 }
 
 /* The larger axis of the movement since the touch started (Y grows downwards), horizontal on a tie. */
@@ -246,6 +261,16 @@ static void accumulate(struct tg_state *st)
     st->t_frame = st->now;
 }
 
+/*
+ * Whether the touch's events are kept for a passthrough: until the fingers are counted for pass,
+ * and then until a key is sent for scroll. Kept for every touch, since which binding a swipe takes
+ * also depends on the modifiers held when it starts.
+ */
+static bool buffering(const struct tg_state *st)
+{
+    return st->phase == TG_IDLE || st->phase == TG_GATHER || (st->phase == TG_TRACK && !st->committed);
+}
+
 static void end_frame(struct tg_state *st)
 {
     int active = 0;
@@ -280,7 +305,7 @@ static void end_frame(struct tg_state *st)
         st->phase = TG_IDLE;
         for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = false;
     }
-    if (st->phase != TG_GATHER) {
+    if (!buffering(st)) {
         st->buf_len = 0;
         st->buf_overflow = false;
     }
@@ -316,7 +341,7 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
     }
     if (st->phase == TG_PASS) {
         st->sink.pass(st->sink.ctx, ev);
-    } else if (st->phase == TG_IDLE || st->phase == TG_GATHER) {
+    } else if (buffering(st)) {
         if (!st->buf_len) st->buf_slot = st->slot;
         if (st->buf_len < TG_PASS_BUFFER) st->buf[st->buf_len++] = *ev;
         else st->buf_overflow = true;
