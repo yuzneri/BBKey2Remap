@@ -73,8 +73,9 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 
 table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
 th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top;white-space:pre-wrap}
-#changes tr{cursor:pointer}
-#changes .remove{padding:4px 10px}
+.changes tr{cursor:pointer}
+.changes .remove{padding:4px 10px}
+#view-changes h3{font-size:15px;margin:14px 0 0}
 #effective th{width:38%}
 #effective tr{cursor:pointer}
 #effective tr.changed td{background:var(--soft)}

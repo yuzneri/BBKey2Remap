@@ -712,36 +712,41 @@ function changeRows() {
   return rows.filter((r) => !folded.has(r.id));
 }
 
+/** Fills TABLE with a header of HEADS and ROWS, or says there is nothing. */
+function fillChanges(table, heads, rows) {
+  if (!rows.length) table.replaceChildren(el('tr', {}, el('td', { textContent: '変更なし' })));
+  else table.replaceChildren(el('tr', {}, ...heads.map((t) => el('th', { textContent: t }))), ...rows);
+}
+
+/** The change list, keys and touch operations apart; a row opens its view. */
 function renderChanges() {
   const rows = changeRows();
-  const table = $('changes');
-  if (!rows.length) { table.replaceChildren(el('tr', {}, el('td', { textContent: '変更なし' }))); return; }
-  table.replaceChildren(el('tr', {}, ...['レイヤー', 'キー', '出力', ''].map((t) => el('th', { textContent: t }))),
-    ...rows.map(({ id, l, key, with_ }) => {
-      if (l === 'kl') {
-        const remove = button('✕', (e) => { e.stopPropagation(); delete map[id]; changed(`${modName(key)}をリセットしました。`); }, 'remove');
-        remove.title = 'リセット';
-        return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; showView('keys'); } }, el('td', { textContent: '修飾キー' }),
-          el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
-          el('td', {}, remove));
-      }
-      if (l === 'tp') {
-        const mode = id === 'tp:mode';
-        const remove = button('✕', (e) => {
-          e.stopPropagation(); delete map[id];
-          changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${touchName(id)}をリセットしました。`);
-        }, 'remove');
-        remove.title = 'リセット';
-        return el('tr', { onclick: () => showView('touch') }, el('td', { textContent: 'タッチ操作' }),
-          el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
-      }
-      const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
+  const touch = rows.filter((r) => r.l === 'tp');
+  fillChanges($('changesTouch'), ['項目', '設定', ''], touch.map(({ id }) => {
+    const mode = id === 'tp:mode';
+    const remove = button('✕', (e) => {
+      e.stopPropagation(); delete map[id];
+      changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${touchName(id)}をリセットしました。`);
+    }, 'remove');
+    remove.title = 'リセット';
+    return el('tr', { onclick: () => showView('touch') },
+      el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
+  }));
+  fillChanges($('changesKeys'), ['レイヤー', 'キー', '出力', ''], rows.filter((r) => r.l !== 'tp').map(({ id, l, key, with_ }) => {
+    if (l === 'kl') {
+      const remove = button('✕', (e) => { e.stopPropagation(); delete map[id]; changed(`${modName(key)}をリセットしました。`); }, 'remove');
       remove.title = 'リセット';
-      return el('tr', { onclick: () => { selected = key; selectedMod = null; view = 'keys'; setLayer(l); window.scrollTo(0, 0); } },
-        el('td', { textContent: layerName(l) + (with_.length ? '（' + with_.map(layerName).join('、') + 'も）' : '') }),
-        el('td', { textContent: keyName(key) }),
-        el('td', { textContent: valueText(map[id]) }), el('td', {}, remove));
-    }));
+      return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; showView('keys'); } }, el('td', { textContent: '修飾キー' }),
+        el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
+        el('td', {}, remove));
+    }
+    const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
+    remove.title = 'リセット';
+    return el('tr', { onclick: () => { selected = key; selectedMod = null; view = 'keys'; setLayer(l); window.scrollTo(0, 0); } },
+      el('td', { textContent: layerName(l) + (with_.length ? '（' + with_.map(layerName).join('、') + 'も）' : '') }),
+      el('td', { textContent: keyName(key) }),
+      el('td', { textContent: valueText(map[id]) }), el('td', {}, remove));
+  }));
 }
 
 /** The views and the save button, each with the number of unsaved changes it holds. */
