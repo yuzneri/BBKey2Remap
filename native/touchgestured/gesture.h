@@ -13,6 +13,8 @@
 
 #define TG_SLOTS 16
 #define TG_HISTORY 32
+/* Events kept until the finger count is known: 500 ms of 3 fingers at 120 Hz is about 800. */
+#define TG_PASS_BUFFER 1024
 
 /* One evdev event; t_us is the event timestamp in microseconds. */
 struct tg_event {
@@ -25,6 +27,8 @@ struct tg_sink {
     void *ctx;
     /* A recognised gesture with a binding; called once per key to send. */
     void (*key)(void *ctx, int64_t t_us, int fingers, enum tg_gesture g, const struct tg_binding *b);
+    /* An event for the virtual touchpad of a passed-through touch; t_us is its original time. */
+    void (*pass)(void *ctx, const struct tg_event *ev);
 };
 
 struct tg_contact {
@@ -32,7 +36,7 @@ struct tg_contact {
     int32_t x, y, px, py; /* current and previous-frame position */
 };
 
-enum tg_phase { TG_IDLE, TG_GATHER, TG_TRACK, TG_DONE };
+enum tg_phase { TG_IDLE, TG_GATHER, TG_TRACK, TG_PASS, TG_DONE };
 
 struct tg_state {
     struct tg_config cfg;
@@ -54,12 +58,20 @@ struct tg_state {
     int axis;                /* 0: X, 1: Y */
     double anchor;           /* position on the axis where the last step was counted */
     int pending;             /* steps counted but held back while the touch may be a flick */
+    /* events since the touch started, replayed if it is passed through */
+    struct tg_event buf[TG_PASS_BUFFER];
+    int buf_len, buf_slot;   /* buf_slot: the slot in effect before the first buffered event */
+    bool buf_overflow;
+    bool dropping;           /* after SYN_DROPPED, until the next SYN_REPORT */
 };
 
 /* Starts with no fingers down. units_per_mm is the resolution of the X and Y axes. */
 void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_mm, const struct tg_sink *sink);
 
-/* Feeds one event of touch_keypad; time is first advanced to the event's timestamp. */
+/*
+ * Feeds one event of touch_keypad; time is first advanced to the event's timestamp. SYN_DROPPED
+ * abandons the current touch; the caller should then feed the device's current slot state.
+ */
 void tg_touch_event(struct tg_state *st, const struct tg_event *ev);
 
 /* Moves time forward to now_us, acting on any deadline that has passed. */

@@ -5,6 +5,8 @@
  *       feed a `getevent -lt` capture to the recogniser and print one line per key:
  *       "MS FINGERS-finger GESTURE key SCANCODE [MODIFIERS]", MS counted from the first event.
  *       Lines with a device prefix are used only when it is DEVICE (default /dev/input/event1).
+ *       Events passed through to the virtual touchpad print as "MS pass TYPE CODE VALUE" with
+ *       their original time and getevent's names and hexadecimal values.
  */
 #include "config.h"
 #include "gesture.h"
@@ -86,6 +88,25 @@ static void print_key(void *ctx, int64_t t_us, int fingers, enum tg_gesture g, c
            tg_gesture_name(g), b->scancode, b->mods ? " " : "", b->mods ? mods : "");
 }
 
+/* The name of value in table t among the names starting with prefix, or "?". */
+static const char *name_of(const struct name *t, size_t n, const char *prefix, int value)
+{
+    for (size_t i = 0; i < n; i++)
+        if (t[i].value == value && !strncmp(t[i].name, prefix, strlen(prefix))) return t[i].name;
+    return "?";
+}
+#define NAME_OF(t, prefix, v) name_of(t, sizeof t / sizeof *t, prefix, v)
+
+static void print_pass(void *ctx, const struct tg_event *ev)
+{
+    (void)ctx;
+    const char *prefix = ev->type == EV_SYN ? "SYN_" : ev->type == EV_ABS ? "ABS_" : ev->type == EV_KEY ? "BTN_" : "";
+    printf("%lld pass %s %s ", (long long)((ev->t_us - origin_us) / 1000), NAME_OF(TYPES, "EV_", ev->type),
+           NAME_OF(CODES, prefix, ev->code));
+    if (ev->type == EV_KEY) printf("%s\n", NAME_OF(VALUES, "", ev->value));
+    else printf("%08x\n", (uint32_t)ev->value);
+}
+
 /*
  * Parses "[   77941.651292] EV_ABS ABS_MT_POSITION_X 0000030f", optionally with "/dev/input/eventN: "
  * after the timestamp. Returns 1 for an event, 0 for a line to skip, -1 for a malformed event line.
@@ -119,7 +140,7 @@ static int replay(const struct tg_config *cfg, const char *path, double resoluti
     FILE *in = fopen(path, "r");
     if (!in) { perror(path); return 1; }
     struct tg_state st;
-    struct tg_sink sink = { .key = print_key };
+    struct tg_sink sink = { .key = print_key, .pass = print_pass };
     tg_init(&st, cfg, resolution, &sink);
     char line[512];
     int64_t last = 0;

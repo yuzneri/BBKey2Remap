@@ -125,9 +125,36 @@ static bool more_fingers_used(const struct tg_state *st, int n)
 }
 
 /* The fingers down when the gathering time ends are the gesture's fingers; later ones are ignored. */
+static void pass(struct tg_state *st, int64_t t_us, uint16_t type, uint16_t code, int32_t value)
+{
+    struct tg_event ev = { .t_us = t_us, .type = type, .code = code, .value = value };
+    st->sink.pass(st->sink.ctx, &ev);
+}
+
+/*
+ * Hands the touch to the ROM from its start. Protocol B leaves out ABS_MT_SLOT when the slot has
+ * not changed, so the replay begins by selecting the slot the device was on, which the virtual
+ * touchpad cannot otherwise know.
+ */
+static void start_passthrough(struct tg_state *st)
+{
+    if (st->buf_overflow) {
+        st->phase = TG_DONE;
+        return;
+    }
+    st->phase = TG_PASS;
+    pass(st, st->buf[0].t_us, EV_ABS, ABS_MT_SLOT, st->buf_slot);
+    for (int i = 0; i < st->buf_len; i++) st->sink.pass(st->sink.ctx, &st->buf[i]);
+    st->buf_len = 0;
+}
+
 static void count_fingers(struct tg_state *st)
 {
     st->fingers = st->max_active;
+    if (st->fingers <= TG_MAX_FINGERS && st->cfg.pass[st->fingers - 1]) {
+        start_passthrough(st);
+        return;
+    }
     if (st->fingers > TG_MAX_FINGERS || !any_bound(st, st->fingers, 0, TG_GESTURE_COUNT - 1)) {
         st->phase = TG_DONE;
         return;
@@ -220,12 +247,47 @@ static void end_frame(struct tg_state *st)
         st->phase = TG_IDLE;
         for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = false;
     }
+    if (st->phase != TG_GATHER) {
+        st->buf_len = 0;
+        st->buf_overflow = false;
+    }
     tg_advance(st, st->now); /* a zero gathering time ends on the first frame */
+}
+
+/* Ends a passed-through touch on the virtual touchpad: lifts every finger it was given. */
+static void release_passthrough(struct tg_state *st, int64_t t_us)
+{
+    for (int s = 0; s < TG_SLOTS; s++) {
+        if (!st->c[s].active) continue;
+        pass(st, t_us, EV_ABS, ABS_MT_SLOT, s);
+        pass(st, t_us, EV_ABS, ABS_MT_TRACKING_ID, -1);
+    }
+    static const uint16_t BUTTONS[] = { BTN_TOUCH, BTN_TOOL_FINGER, BTN_TOOL_DOUBLETAP, BTN_TOOL_TRIPLETAP, BTN_TOOL_QUADTAP };
+    for (size_t i = 0; i < sizeof BUTTONS / sizeof *BUTTONS; i++) pass(st, t_us, EV_KEY, BUTTONS[i], 0);
+    pass(st, t_us, EV_SYN, SYN_REPORT, 0);
 }
 
 void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
 {
     tg_advance(st, ev->t_us);
+    if (ev->type == EV_SYN && ev->code == SYN_DROPPED) {
+        if (st->phase == TG_PASS) release_passthrough(st, ev->t_us);
+        if (st->phase != TG_IDLE) st->phase = TG_DONE;
+        st->buf_len = 0;
+        st->dropping = true;
+        return;
+    }
+    if (st->dropping) {
+        st->dropping = !(ev->type == EV_SYN && ev->code == SYN_REPORT);
+        return;
+    }
+    if (st->phase == TG_PASS) {
+        st->sink.pass(st->sink.ctx, ev);
+    } else if (st->phase == TG_IDLE || st->phase == TG_GATHER) {
+        if (!st->buf_len) st->buf_slot = st->slot;
+        if (st->buf_len < TG_PASS_BUFFER) st->buf[st->buf_len++] = *ev;
+        else st->buf_overflow = true;
+    }
     struct tg_contact *c = st->slot >= 0 ? &st->c[st->slot] : NULL;
     if (ev->type == EV_SYN && ev->code == SYN_REPORT) {
         end_frame(st);

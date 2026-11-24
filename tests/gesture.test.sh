@@ -198,6 +198,70 @@ check 'device recording: a 5.5 mm two-finger swipe up with the default threshold
     'bind 2 swipe up key 1\nbind 2 swipe down key 2\nbind 3 tap key 3\n' "$FIXTURES/touch-2-and-3-fingers.getevent" \
     '2-finger swipe up\n2-finger swipe up\n'
 
+# as_passed LOG: the "MS pass TYPE CODE VALUE" lines replay prints for passing LOG through unchanged.
+as_passed() {
+    awk 'NR == 1 { split($2, o, "."); t0 = o[1] * 1000 + substr(o[2], 1, 3) }
+        { sub(/^\[ */, ""); split($1, t, "."); printf "%d pass %s %s %s\n", t[1] * 1000 + substr(t[2], 1, 3) - t0, $2, $3, $4 }' "$1"
+}
+# passes CONFIG LOG EXPECTED_FILE: replaying LOG prints exactly the lines of EXPECTED_FILE.
+passes() {
+    conf "$1"
+    "$GESTURETOOL" replay "$WORK/g.conf" "$2" > "$WORK/passed" || return 1
+    diff "$3" "$WORK/passed"
+}
+
+touches '0 0=300,200\n40 0=300,200 1=700,200\n80 0=320,180 1=720,180\n200 0=340,160 1=740,160\n260 -0 -1\n' > "$WORK/two.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/two.log"; } > "$WORK/two.expected"
+check 'a passed-through touch is replayed from its start with the original times' \
+    passes 'pass 2\nbind 1 tap key 1\n' "$WORK/two.log" "$WORK/two.expected"
+check 'other finger counts are still recognised next to a passthrough' \
+    replays 'pass 2\nbind 1 tap key 1\n' '0 0=300,200\n100 -0\n' '100 1-finger tap key 0x1\n'
+
+# The second touch starts without ABS_MT_SLOT because the device is still on slot 1. (The first
+# touch selects its slot itself; the slot in effect before it is 0.)
+cat > "$WORK/slot.log" <<'EOF'
+[  1000.000000] EV_ABS ABS_MT_SLOT 00000001
+[  1000.000000] EV_ABS ABS_MT_TRACKING_ID 00000001
+[  1000.000000] EV_ABS ABS_MT_POSITION_X 00000064
+[  1000.000000] EV_ABS ABS_MT_POSITION_Y 00000064
+[  1000.000000] EV_SYN SYN_REPORT 00000000
+[  1000.050000] EV_ABS ABS_MT_TRACKING_ID ffffffff
+[  1000.050000] EV_SYN SYN_REPORT 00000000
+[  1000.500000] EV_ABS ABS_MT_TRACKING_ID 00000002
+[  1000.500000] EV_ABS ABS_MT_POSITION_X 000000c8
+[  1000.500000] EV_ABS ABS_MT_POSITION_Y 000000c8
+[  1000.500000] EV_SYN SYN_REPORT 00000000
+[  1000.550000] EV_ABS ABS_MT_TRACKING_ID ffffffff
+[  1000.550000] EV_SYN SYN_REPORT 00000000
+EOF
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/slot.log" | sed -n 1,7p
+  echo '500 pass EV_ABS ABS_MT_SLOT 00000001'; as_passed "$WORK/slot.log" | sed -n '8,$p'; } > "$WORK/slot.expected"
+check 'a passthrough starts by selecting the slot the device is on' passes 'pass 1\n' "$WORK/slot.log" "$WORK/slot.expected"
+
+# 600 frames 1 ms apart while gather_ms (500) waits: 2400 events, more than are kept.
+{ touches "$(awk 'BEGIN { for (t = 0; t < 600; t++) printf "%d 0=%d,200\\n", t, 300 + t % 2 }')600 -0\n"
+  touches '0 0=300,200\n50 -0\n' | sed 's/^\[  1000/[  1001/'; } > "$WORK/long.log"
+{ echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/long.log" | tail -n 8; } > "$WORK/long.expected"
+check 'a touch with more events than the buffer holds is dropped, and the next one passes' \
+    passes 'pass 1\nbind 2 tap key 2\ngather_ms 500\n' "$WORK/long.log" "$WORK/long.expected"
+
+{ touches '0 0=300,200\n10 0=310,200\n' | sed '$d'
+  echo '[  1000.010000] EV_SYN SYN_DROPPED 00000000'
+  touches '20 0=330,200\n30 0=340,200\n40 -0\n'
+  touches '0 0=300,200\n50 -0\n' | sed 's/^\[  1000/[  1001/'; } > "$WORK/dropped.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | sed -n 1,8p
+  printf '10 pass EV_ABS ABS_MT_SLOT 00000000\n10 pass EV_ABS ABS_MT_TRACKING_ID ffffffff\n'
+  for b in BTN_TOUCH BTN_TOOL_FINGER BTN_TOOL_DOUBLETAP BTN_TOOL_TRIPLETAP BTN_TOOL_QUADTAP; do echo "10 pass EV_KEY $b UP"; done
+  echo '10 pass EV_SYN SYN_REPORT 00000000'
+  echo '1000 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/dropped.log" | tail -n 8; } > "$WORK/dropped.expected"
+check 'SYN_DROPPED lifts the passed fingers and ignores the rest of the touch' \
+    passes 'pass 1\n' "$WORK/dropped.log" "$WORK/dropped.expected"
+
+conf 'pass 1\n'
+check 'device recording: every event of passed-through touches reaches the virtual touchpad' sh -c '
+    [ "$("$1" replay "$2" "$3" | grep -vc "ABS_MT_SLOT 00000000$")" = "$(grep -vc "ABS_MT_SLOT *00000000$" "$3")" ]' \
+    - "$GESTURETOOL" "$WORK/g.conf" "$FIXTURES/touch-swipes-1finger.getevent"
+
 # Device recordings: the finger counts must come out right, including the third finger that
 # landed 122 ms after the first. Taps are made easy here so that every touch reports its count.
 conf "tap_ms 600\nstart_mm 25\n$TAPS"
