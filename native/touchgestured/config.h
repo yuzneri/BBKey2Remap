@@ -50,6 +50,12 @@ void tg_config_defaults(struct tg_config *cfg);
  */
 int tg_config_load(struct tg_config *cfg, FILE *in, char *err, size_t errlen);
 
+/*
+ * Writes one line "NAME DEFAULT MIN MAX" per threshold, the defaults and accepted ranges of the
+ * settings file, so that the WebUI shows and checks them without a copy of its own.
+ */
+void tg_config_print_thresholds(FILE *out);
+
 /* "swipe up", "flick down-left", "tap": the settings-file spelling of a gesture. */
 const char *tg_gesture_name(enum tg_gesture g);
 

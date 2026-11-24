@@ -99,11 +99,19 @@ test('status lines parse into diagnostics', () => {
   assert.deepEqual(st, { kcmLoaded: '/system/usr/keychars/Generic.kcm', klLoaded: '/vendor/usr/keylayout/stmpe.kl',
     shadowedBy: ['/product/usr/keychars/stmpe.kcm'], conflicts: ['other'], applied: false, klApplied: true,
     klEditable: true, flags: ['update'], klBase: { 42: 'SHIFT_LEFT', 110: 'CTRL_LEFT' }, klLive: { 110: 'ESCAPE' },
-    tpSaved: 'rom', tpLive: 'rom', tpExcluded: '', tpForeign: [], tpConflicts: [] });
+    tpSaved: 'rom', tpLive: 'rom', tpExcluded: '', tpForeign: [], tpConflicts: [], tpThresholds: [], tpDaemon: '', tpDaemonLog: '' });
   const tp = KCM.parseStatus('tp_saved=off\ntp_live=foreign\ntp_excluded=no\ntp_foreign=/system/etc/excluded-input-devices.xml\n' +
     'tp_conflict_module=other\n');
   assert.deepEqual([tp.tpSaved, tp.tpLive, tp.tpExcluded, tp.tpForeign, tp.tpConflicts],
     ['off', 'foreign', 'no', ['/system/etc/excluded-input-devices.xml'], ['other']]);
+});
+
+test('status lines give the thresholds from touchgestured and whether it runs', () => {
+  const st = KCM.parseStatus('tp_threshold=step_mm:3:0.5:25\ntp_threshold=tap_ms:200:0:2000\ntp_threshold=bad:x:1:2\n' +
+    'tp_daemon=stopped\ntp_daemon_log=touchgestured: /dev/uinput: Permission denied\n');
+  assert.deepEqual(st.tpThresholds, [{ name: 'step_mm', def: 3, min: 0.5, max: 25 }, { name: 'tap_ms', def: 200, min: 0, max: 2000 }]);
+  assert.equal(st.tpDaemon, 'stopped');
+  assert.equal(st.tpDaemonLog, 'touchgestured: /dev/uinput: Permission denied');
 });
 
 test('touch surface settings: the modes, thresholds, gesture keys and passthrough', () => {

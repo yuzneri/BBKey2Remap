@@ -293,6 +293,8 @@ status() {
     live=$(tp_mode "$LIVE_TP")
     if [ -n "$live" ]; then echo "tp_live=$live"; elif [ -e "$LIVE_TP" ]; then echo tp_live=foreign; else echo tp_live=rom; fi
     tp_blockers
+    # The thresholds' defaults and ranges come from touchgestured itself, so the WebUI keeps no copy.
+    "$TG" thresholds 2>/dev/null | runawk 'NF == 4 { print "tp_threshold=" $1 ":" $2 ":" $3 ":" $4 }' || :
     if [ -n "$(touch_pid)" ]; then echo tp_daemon=running
     else
         echo tp_daemon=stopped

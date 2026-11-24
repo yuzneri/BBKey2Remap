@@ -414,12 +414,15 @@
   /**
    * remap.sh status output as {kcmLoaded, shadowedBy, conflicts, applied, flags, modifiers, touch}.
    * Touch fields: tpSaved and tpLive are "rom", "off" or "gesture" (tpLive also "foreign");
-   * tpExcluded is "yes", "no", or "" when dumpsys gave no excluded device list.
+   * tpExcluded is "yes", "no", or "" when dumpsys gave no excluded device list; tpThresholds is
+   * [{name, def, min, max}] from touchgestured; tpDaemon is "running", "stopped" or "", with
+   * tpDaemonLog the last line of its log when it stopped.
    */
   function parseStatus(text) {
     const st = { kcmLoaded: '', klLoaded: '', shadowedBy: [], conflicts: [], applied: false, klApplied: false,
       klEditable: false, flags: [], klBase: {}, klLive: {},
-      tpSaved: 'rom', tpLive: 'rom', tpExcluded: '', tpForeign: [], tpConflicts: [] };
+      tpSaved: 'rom', tpLive: 'rom', tpExcluded: '', tpForeign: [], tpConflicts: [],
+      tpThresholds: [], tpDaemon: '', tpDaemonLog: '' };
     for (const line of text.split('\n')) {
       const i = line.indexOf('=');
       if (i < 0) continue;
@@ -437,6 +440,14 @@
       else if (k === 'tp_excluded') st.tpExcluded = v;
       else if (k === 'tp_foreign') st.tpForeign.push(v);
       else if (k === 'tp_conflict_module') st.tpConflicts.push(v);
+      else if (k === 'tp_daemon') st.tpDaemon = v;
+      else if (k === 'tp_daemon_log') st.tpDaemonLog = v;
+      else if (k === 'tp_threshold') {
+        const [name, def, min, max] = v.split(':');
+        if ([def, min, max].every((x) => x !== undefined && Number.isFinite(Number(x)))) {
+          st.tpThresholds.push({ name, def: Number(def), min: Number(min), max: Number(max) });
+        }
+      }
       else if (k === 'kl_base' || k === 'kl_live') {
         const [scan, code] = v.split(':');
         st[k === 'kl_base' ? 'klBase' : 'klLive'][scan] = code;

@@ -62,6 +62,18 @@ check 'a physical key with two modifiers is rejected' rejects 'mod 42 shift\nmod
 long=$(printf '%0300d' 0)
 check 'overlong lines are rejected' rejects "# $long\n" 'longer than 256'
 
+# Every threshold the table lists is accepted at its default and its ends, and refused just outside.
+thresholds_match_parser() {
+    "$GESTURETOOL" thresholds > "$WORK/thresholds" && [ "$(wc -l < "$WORK/thresholds")" -eq 7 ] || return 1
+    while read -r name def min max; do
+        for v in "$def" "$min" "$max"; do accepts "$name $v\n" "$(printf "$DEFAULTS" | sed "s/^$name .*/$name $v/")\n" || return 1; done
+        rejects "$name $(awk -v x="$max" 'BEGIN { print x + 1 }')\n" "$name must be" || return 1
+    done < "$WORK/thresholds"
+    printf "$DEFAULTS" | awk '{ print $1, $2 }' > "$WORK/defaults"
+    awk '{ print $1, $2 }' "$WORK/thresholds" | cmp - "$WORK/defaults"
+}
+check 'the thresholds table gives the defaults and ranges the settings file accepts' thresholds_match_parser
+
 # The settings check prints what it read; reading that back must give the same settings.
 conf 'step_mm 4\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 tap key 3\npass 3\nmod 42 shift\n'
 "$GESTURETOOL" check "$WORK/g.conf" > "$WORK/dump.conf"

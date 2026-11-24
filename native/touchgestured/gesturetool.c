@@ -1,6 +1,7 @@
 /*
  * Host-side driver of the touchgestured recogniser, for tests and for replaying device logs.
  *   gesturetool check CONFIG    validate a settings file; prints the effective settings
+ *   gesturetool thresholds      the thresholds' defaults and ranges, as touchgestured prints them
  *   gesturetool replay CONFIG LOG [--resolution UNITS_PER_MM] [--touch DEVICE] [--keys DEVICE]
  *       feed a `getevent -lt` capture to the recogniser and print one line per key:
  *       "MS FINGERS-finger GESTURE key SCANCODE [MODIFIERS]", MS counted from the first event.
@@ -225,6 +226,10 @@ static int replay(const struct tg_config *cfg, const char *path, double resoluti
 int main(int argc, char **argv)
 {
     struct tg_config cfg;
+    if (argc == 2 && !strcmp(argv[1], "thresholds")) {
+        tg_config_print_thresholds(stdout);
+        return 0;
+    }
     if (argc == 3 && !strcmp(argv[1], "check")) {
         if (load(argv[2], &cfg)) return 1;
         dump(&cfg);
@@ -245,6 +250,7 @@ int main(int argc, char **argv)
     }
 usage:
     fprintf(stderr, "usage: gesturetool check CONFIG\n"
+                    "       gesturetool thresholds\n"
                     "       gesturetool replay CONFIG LOG [--resolution UNITS_PER_MM] [--touch DEVICE] [--keys DEVICE]\n");
     return 2;
 }

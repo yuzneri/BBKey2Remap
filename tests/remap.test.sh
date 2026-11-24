@@ -330,6 +330,12 @@ status_reports_gesture_mode() {
         ! grep -q '^tp_foreign=' "$WORK/status"
 }
 check 'status reports gesture mode as saved and live' status_reports_gesture_mode
+status_reports_thresholds() {
+    remap status > "$WORK/status" && grep '^tp_threshold=' "$WORK/status" > "$WORK/thresholds" &&
+        [ "$(wc -l < "$WORK/thresholds")" -eq 7 ] && grep -qx 'tp_threshold=step_mm:3:0.5:25' "$WORK/thresholds" &&
+        grep -qx 'tp_threshold=after_key_ms:300:0:5000' "$WORK/thresholds"
+}
+check "status reports each threshold's default and range from touchgestured" status_reports_thresholds
 remap save sym:H=R_DPAD_LEFT >/dev/null
 
 # touchgestured runs only while gesture mode is saved and in effect (the live excluded device list

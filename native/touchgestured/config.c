@@ -211,6 +211,18 @@ static int parse_line(struct parser *p, char *line)
     return fail(p, "unknown setting \"%s\"", tok[0]);
 }
 
+void tg_config_print_thresholds(FILE *out)
+{
+    struct tg_config cfg;
+    tg_config_defaults(&cfg);
+    for (size_t i = 0; i < sizeof THRESHOLDS / sizeof *THRESHOLDS; i++) {
+        const struct threshold *t = &THRESHOLDS[i];
+        const char *field = (const char *)&cfg + t->offset;
+        double value = t->integer ? *(const int *)field : *(const double *)field;
+        fprintf(out, "%s %g %g %g\n", t->name, value, t->lo, t->hi);
+    }
+}
+
 int tg_config_load(struct tg_config *cfg, FILE *in, char *err, size_t errlen)
 {
     struct parser p = { .cfg = cfg, .err = err, .errlen = errlen };
