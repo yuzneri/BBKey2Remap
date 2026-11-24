@@ -35,8 +35,9 @@ refused() {
     if [ -e "$WORK/before.tp" ]; then cmp "$DST_TP" "$WORK/before.tp" || return 1; else [ ! -e "$DST_TP" ] || { echo 'excluded device list appeared'; return 1; }; fi
     if [ -e "$WORK/before.tg" ]; then cmp "$DST_TG_CONF" "$WORK/before.tg" || return 1; else [ ! -e "$DST_TG_CONF" ] || { echo 'gesture settings appeared'; return 1; }; fi
     [ ! -e "$MOD/.save.lock" ] && [ ! -L "$MOD/.save.lock" ] || { echo 'lock left behind'; return 1; }
-    ! ls "$MOD"/.stmpe.kcm.* "$MOD"/.config.* "$MOD"/.excluded.xml.* "$MOD"/.touchgestured.conf.* "$MOD"/.touch.* \
-        >/dev/null 2>&1 || { echo 'temporary files left'; return 1; }
+    for f in "$MOD"/.stmpe.kcm.* "$MOD"/.stmpe.kl.* "$MOD"/.config.* "$MOD"/.excluded.xml.* "$MOD"/.touchgestured.conf.* "$MOD"/.touch.*; do
+        [ ! -e "$f" ] || { echo "temporary file left: $f"; return 1; }
+    done
 }
 
 save_writes_checked_map() {
@@ -309,7 +310,7 @@ check 'gesture mode without gestures installs an empty gesture key layout' gestu
 
 set -f; remap save $GESTURES >/dev/null; set +f
 for bad in tp:1_swipe_upleft=DPAD_UP tp:4_tap=ENTER tp:1_tap=enter tp:1_tap=ENTER+ tp:1_tap=ENTER++ctrl tp:1_pass=yes \
-    tp:tap_ms=fast tp:step_mm= tp:1_tap=; do
+    tp:tap_ms=fast tp:step_mm= tp:1_tap= tp:step_mm=2. tp:step_mm=.5 tp:step_mm=1.2.3; do
     check "a malformed touch setting is refused: $bad" refused 'タッチ操作の設定が正しくありません' remap save "$bad"
 done
 check 'a touch setting given twice is refused' refused 'タッチ操作の設定が重複しています' remap save tp:1_tap=ENTER tp:1_tap=SPACE
@@ -336,7 +337,8 @@ remap save sym:H=R_DPAD_LEFT >/dev/null
 live_gesture_list() { mkdir -p "$DEV/system/etc" && cp "$DST_TP" "$DEV/system/etc/"; }
 daemon_pid() { cat "$MOD/.touchgestured.pid" 2>/dev/null; }
 # alive PID: PID is a running (not zombie) touchgestured.
-alive() { tr '\000' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q 'bin/touchgestured'; }
+alive() { tr '\000' ' ' 2>/dev/null < "/proc/$1/cmdline" | grep -q 'bin/touchgestured'; }
+live_key_layouts() { mkdir -p "$DEV/system/usr/keylayout" && cp "$DST_TG_KL" "$DEV/system/usr/keylayout/"; }
 
 daemon_waits_for_reboot() {
     rm -f "$MOD/daemon.calls"
@@ -346,17 +348,40 @@ daemon_waits_for_reboot() {
 check 'touch-start starts nothing until gesture mode is in effect after a reboot' daemon_waits_for_reboot
 
 daemon_starts() {
-    live_gesture_list && remap touch-start && sleep 0.5 && pid=$(daemon_pid) && alive "$pid" &&
+    live_gesture_list && live_key_layouts && remap touch-start && sleep 0.5 && pid=$(daemon_pid) && alive "$pid" &&
         grep -q "^$pid .*/touchgestured.conf$" "$MOD/daemon.calls" && remap status | grep -qx tp_daemon=running
 }
 check 'touch-start starts touchgestured with the saved settings once gesture mode is in effect' daemon_starts
 
-save_restarts_daemon() {
+# The live key layouts are the ones mounted at boot: a restarted daemon must not send gestures that
+# the live gesture key layout does not map yet, nor use modifier keys the live stmpe.kl does not have.
+save_keeps_daemon_until_layouts_are_live() {
     old=$(daemon_pid)
-    remap save tp:mode=gesture tp:1_tap=ENTER >/dev/null && sleep 0.5 && new=$(daemon_pid) &&
-        [ -n "$new" ] && [ "$new" != "$old" ] && alive "$new" && ! alive "$old" && grep -qx 'bind 1 tap key 524' "$DST_TG_CONF"
+    remap save tp:mode=gesture tp:step_mm=4 tp:1_tap=ENTER tp:2_tap=SPACE >/dev/null && sleep 0.5 &&
+        [ "$(daemon_pid)" = "$old" ] && alive "$old"
 }
-check 'save restarts touchgestured, so new gesture keys work without a reboot' save_restarts_daemon
+check 'save keeps the running touchgestured while the saved gesture key layout is not live yet' save_keeps_daemon_until_layouts_are_live
+# The gestures of the last save, whose key layout the tests below make live.
+SAME='tp:mode=gesture tp:1_tap=ENTER tp:2_tap=SPACE'
+save_restarts_daemon() {
+    live_key_layouts && old=$(daemon_pid)
+    set -f; remap save $SAME tp:step_mm=2 >/dev/null; rc=$?; set +f; [ "$rc" -eq 0 ] && sleep 0.5 && new=$(daemon_pid) &&
+        [ -n "$new" ] && [ "$new" != "$old" ] && alive "$new" && ! alive "$old" && grep -qx 'step_mm 2' "$DST_TG_CONF"
+}
+check 'save restarts touchgestured when only its settings changed, so thresholds work without a reboot' save_restarts_daemon
+daemon_detached() {
+    pid=$(daemon_pid) && [ "$(cut -d' ' -f6 "/proc/$pid/stat")" != "$(cut -d' ' -f6 /proc/$$/stat)" ]
+}
+check 'touchgestured runs in its own session, so killing the WebUI shell does not stop it' daemon_detached
+save_survives_failed_restart() {
+    mkdir -p "$DEV/bin.broken" && printf '#!/bin/sh\nexit 1\n' > "$DEV/bin.broken/setsid" && chmod +x "$DEV/bin.broken/setsid"
+    remap touch-stop
+    set -f; out=$(PATH="$DEV/bin.broken:$PATH" sh "$MOD/remap.sh" save $SAME tp:step_mm=2 2>&1); rc=$?; set +f
+    rm -rf "$DEV/bin.broken"
+    [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q '^WARNING: ' && [ "$(printf '%s\n' "$out" | tail -n 1)" = OK ] || { echo "$out"; return 1; }
+}
+check 'a daemon that does not come up is a warning, not a failed save' save_survives_failed_restart
+remap touch-start
 
 save_off_stops_daemon() {
     old=$(daemon_pid)
@@ -367,10 +392,26 @@ save_off_stops_daemon() {
 check 'save leaving gesture mode stops touchgestured, and status shows its last log line' save_off_stops_daemon
 
 touch_stop_stops() {
-    remap save tp:mode=gesture tp:1_tap=ENTER >/dev/null && sleep 0.5 && pid=$(daemon_pid) && alive "$pid" &&
-        remap touch-stop && ! alive "$pid" && [ ! -e "$MOD/.touchgestured.pid" ]
+    set -f; remap save $SAME >/dev/null; rc=$?; set +f
+    [ "$rc" -eq 0 ] && sleep 0.5 && pid=$(daemon_pid) && alive "$pid" && remap touch-stop && ! alive "$pid" && [ ! -e "$MOD/.touchgestured.pid" ]
 }
 check 'touch-stop stops touchgestured' touch_stop_stops
+service_starts_daemon() { sh "$MOD/service.sh" && sleep 0.5 && alive "$(daemon_pid)"; }
+check 'service.sh starts touchgestured at boot' service_starts_daemon
+no_second_daemon() {
+    first=$(daemon_pid)
+    sh "$MOD/remap.sh" touch-start & a=$!
+    sh "$MOD/remap.sh" touch-start & b=$!
+    wait "$a" "$b"; sleep 0.5
+    n=$(for p in /proc/[0-9]*; do tr '\000' ' ' 2>/dev/null < "$p/cmdline"; echo; done | grep -c "^/bin/sh $MOD/bin/touchgestured ")
+    [ "$n" -eq 1 ] || { echo "$n daemons"; return 1; }
+}
+check 'two touch-starts at once leave a single touchgestured' no_second_daemon
+stubborn_daemon_is_killed() {
+    pid=$(daemon_pid); kill -STOP "$pid"
+    remap touch-stop; ! alive "$pid"
+}
+check 'touch-stop kills a touchgestured that ignores SIGTERM' stubborn_daemon_is_killed
 
 stale_pid_left_alone() {
     sleep 30 & other=$!

@@ -47,7 +47,8 @@ function bridge(args) {
       reject(new Error('WebUI Xで開き、rootとSHELL権限を許可してください。'));
       return;
     }
-    if (!args.every((a) => /^[A-Za-z0-9_+:=]+$/.test(a))) { reject(new Error('実行できない引数です。')); return; }
+    // The same alphabet remap.sh accepts ("." only matters in touch thresholds); none is special to sh.
+    if (!args.every((a) => /^[A-Za-z0-9_+:=.]+$/.test(a))) { reject(new Error('実行できない引数です。')); return; }
     const cb = 'key2remapCb' + (++seq);
     let timer;
     const done = () => { clearTimeout(timer); delete window[cb]; };
@@ -420,7 +421,9 @@ function touchText(id, v) { return id === 'tp:mode' ? touchLabel(v) : v || 'な�
 /** Mode buttons; "off" cannot be chosen while another excluded device list is in the way. */
 function renderTouch() {
   const mode = map['tp:mode'] || 'rom';
-  $('touchModes').replaceChildren(...TOUCH_MODES.map((m) => {
+  // Gestures cannot be assigned on this page yet, so their mode is shown only once it is set.
+  const modes = TOUCH_MODES.filter((m) => m.id !== 'gesture' || mode === 'gesture');
+  $('touchModes').replaceChildren(...modes.map((m) => {
     const b = button(m.label, () => setTouchMode(m.id), 'tab' + (m.id === mode ? ' active' : ''));
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(m.id === mode));

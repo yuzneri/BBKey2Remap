@@ -6,7 +6,8 @@ NEW="$DEV/data/adb/modules_update/key2_remap_gui"
 PREV="$DEV/data/adb/modules/key2_remap_gui"
 export KEY2REMAP_ROOT="$DEV" PATH="$DEV/bin:$PATH"
 
-fresh_device() { rm -rf "$DEV" && fake_device "$DEV" && module_files "$NEW"; }
+# Magisk sets its default permissions (files 0644) before it sources customize.sh.
+fresh_device() { rm -rf "$DEV" && fake_device "$DEV" && module_files "$NEW" && chmod 0644 "$NEW/bin/touchgestured"; }
 
 # install: run customize.sh with stand-ins for the installer functions; output in $WORK/install.log.
 install() {

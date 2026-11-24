@@ -2,7 +2,9 @@
 : "${ROOT:?run tests through tests/run.sh}" "${KCMTOOL:?run tests through tests/run.sh}"
 FIXTURES="$ROOT/tests/fixtures"
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+# Stub daemons (module_files) run from under $WORK; a failed test may leave one behind, possibly
+# stopped (SIGSTOP), which only SIGKILL ends.
+trap 'pkill -KILL -f "$WORK/" 2>/dev/null; rm -rf "$WORK"' EXIT
 passed=0 failed=0 known=0
 
 # check NAME COMMAND...: passes when COMMAND exits 0; its output is shown on failure.

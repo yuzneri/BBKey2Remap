@@ -41,6 +41,7 @@ TG="$BASE/bin/touchgestured"
 DST_TG_CONF="$BASE/touchgestured.conf"
 DST_TG_KL="$BASE/system/usr/keylayout/key2remap_touch_keys.kl"
 DST_TG_IDC="$BASE/system/usr/idc/key2remap_touch_pad.idc"
+LIVE_TG_KL="$R/system/usr/keylayout/key2remap_touch_keys.kl"
 TG_PID="$BASE/.touchgestured.pid"
 TG_LOG="$BASE/touchgestured.log"
 
@@ -104,7 +105,8 @@ check_touch() {
     id=${1%%=*} value=${1#*=}
     case "$id" in
         start_mm|step_mm|flick_mm_s|tap_ms|hold_ms|gather_ms|after_key_ms)
-            case "$value" in ''|*[!0-9.]*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+            # The same grammar as the WebUI's (kcm.js): digits, optionally one "." between digits.
+            case "$value" in ''|*[!0-9.]*|.*|*.|*.*.*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
         [123]_swipe_up|[123]_swipe_down|[123]_swipe_left|[123]_swipe_right|[123]_tap|\
         [123]_flick_up|[123]_flick_down|[123]_flick_left|[123]_flick_right|\
         [123]_flick_upleft|[123]_flick_upright|[123]_flick_downleft|[123]_flick_downright)
@@ -157,7 +159,7 @@ acquire_lock() {
     owner=$(readlink "$LOCK" 2>/dev/null || :)
     case "$owner" in
         ''|*[!0-9]*) ;;
-        *) tr '\000' ' ' < "/proc/$owner/cmdline" 2>/dev/null | grep -q 'remap\.sh' &&
+        *) tr '\000' ' ' 2>/dev/null < "/proc/$owner/cmdline" | grep -q 'remap\.sh' &&
             fail '別の保存が実行中です。少し待ってからやり直してください。' ;;
     esac
     rm -f "$LOCK"
@@ -187,30 +189,61 @@ label_new_system_file() {
 touch_pid() {
     pid=$(cat "$TG_PID" 2>/dev/null) || return 0
     case "$pid" in ''|*[!0-9]*) return 0 ;; esac
-    tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -qF "$TG" && echo "$pid"
+    tr '\000' ' ' 2>/dev/null < "/proc/$pid/cmdline" | grep -qF "$TG" && echo "$pid"
     return 0
 }
 
+# touch_stop: stop touchgestured; fails if it is still running.
 touch_stop() {
     pid=$(touch_pid)
     if [ -n "$pid" ]; then
         kill "$pid" 2>/dev/null || :
         for _ in 1 2 3 4 5 6 7 8 9 10; do [ -n "$(touch_pid)" ] || break; sleep 0.2; done
+        # One that ignores SIGTERM would otherwise go on sending keys next to its replacement.
+        if [ -n "$(touch_pid)" ]; then kill -9 "$pid" 2>/dev/null || :; sleep 0.2; fi
+        [ -z "$(touch_pid)" ] || return 1
     fi
     rm -f "$TG_PID"
 }
 
-# touch_start: restart touchgestured when gesture mode is both saved and in effect (the live excluded
-# device list is this module's, marked gesture). Outside the active module directory (a pending
-# update being installed) nothing is started: the running module's daemon stays until the reboot.
+# layouts_live: the key layouts in effect are the saved ones. Android reads them at boot, while the
+# daemon reads only its settings, written for the saved layouts: run against older live ones it
+# would send gestures they do not map yet, or take other keys for the physical modifiers.
+layouts_live() {
+    cmp -s "$DST_TG_KL" "$LIVE_TG_KL" || return 1
+    if [ -s "$DST_KL" ]; then kl=$DST_KL; else kl=$BASE/base.kl; fi
+    cmp -s "$kl" "$LIVE_KL"
+}
+
+# touch_start: restart touchgestured when gesture mode is saved and in effect (the live excluded
+# device list is this module's, marked gesture) and the saved key layouts are live; until a reboot
+# makes them live, a running daemon keeps the settings that match the live ones. Outside the active
+# module directory (a pending update being installed) nothing changes: the running module's daemon
+# stays until the reboot. Fails if the daemon cannot be (re)started.
 touch_start() {
     [ "$BASE" = "$(cd "$R/data/adb/modules/$MODID" 2>/dev/null && pwd -P)" ] || return 0
-    touch_stop
-    [ "$(tp_mode "$DST_TP")" = gesture ] && [ "$(tp_mode "$LIVE_TP")" = gesture ] && [ -s "$DST_TG_CONF" ] || return 0
+    if [ "$(tp_mode "$DST_TP")" != gesture ] || [ "$(tp_mode "$LIVE_TP")" != gesture ] || [ ! -s "$DST_TG_CONF" ]; then
+        touch_stop
+        return
+    fi
+    layouts_live || return 0
+    touch_stop || return 1
     # setsid detaches it from the WebUI's shell, which may be killed once the command returns.
     if command -v setsid >/dev/null; then detach=setsid; else detach=; fi
     $detach "$TG" "$DST_TG_CONF" > "$TG_LOG" 2>&1 < /dev/null &
     echo $! > "$TG_PID"
+    sleep 0.2
+    [ -n "$(touch_pid)" ]
+}
+
+# touch_command start|stop: touch-start and touch-stop, holding the save lock so that two of them, or
+# one and a save, cannot leave two daemons.
+touch_command() {
+    acquire_lock
+    trap 'if [ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi' EXIT
+    trap 'exit 1' HUP INT TERM
+    if [ "$1" = start ]; then touch_start || fail "タッチ操作の常駐プログラムを起動できませんでした。$(tail -n 1 "$TG_LOG" 2>/dev/null)"
+    else touch_stop || fail 'タッチ操作の常駐プログラムを止められませんでした。'; fi
 }
 
 # roles PREFIX FILE: "PREFIX=SCAN:KEYCODE" for each physical modifier key mapped in FILE.
@@ -275,8 +308,8 @@ case "$cmd" in
     status) status; exit 0 ;;
     # svc goes through PowerManager: apps are shut down normally, unlike a bare reboot.
     reboot) svc power reboot || fail '再起動できませんでした。'; exit 0 ;;
-    touch-start) touch_start; exit 0 ;;
-    touch-stop) touch_stop; exit 0 ;;
+    touch-start) touch_command start; exit 0 ;;
+    touch-stop) touch_command stop; exit 0 ;;
     read|original|preview|save|verify) ;;
     *) fail '不明なコマンドです。' ;;
 esac
@@ -353,10 +386,15 @@ if [ "$TP_MODE" = gesture ]; then
 fi
 # The renames stay inside the module directory: the live bind mounts keep the old inodes until
 # the next boot. sync before them so a power loss cannot leave a truncated file behind the name.
+# The directories are made first, so a failure cannot leave only some of the files replaced.
+[ "$KL_COUNT" -eq 0 ] || [ -d "${DST_KL%/*}" ] || mkdir -m 0755 "${DST_KL%/*}"
+[ "$TP_MODE" = rom ] || [ -d "${DST_TP%/*}" ] || mkdir -m 0755 "${DST_TP%/*}"
+if [ "$TP_MODE" = gesture ]; then
+    for d in "$BASE/system/usr" "${DST_TG_KL%/*}" "${DST_TG_IDC%/*}"; do [ -d "$d" ] || mkdir -m 0755 "$d"; done
+fi
 sync
 mv -f "$TMP" "$DST"
 if [ "$KL_COUNT" -gt 0 ]; then
-    [ -d "${DST_KL%/*}" ] || mkdir -m 0755 "${DST_KL%/*}"
     mv -f "$TMP_KL" "$DST_KL"
 else
     # No modifier key edits: install no key layout at all, so the original stays untouched.
@@ -364,7 +402,6 @@ else
     rmdir "${DST_KL%/*}" 2>/dev/null || :
 fi
 if [ "$TP_MODE" != rom ]; then
-    [ -d "${DST_TP%/*}" ] || mkdir -m 0755 "${DST_TP%/*}"
     mv -f "$TMP_TP" "$DST_TP"
 else
     rm -f "$DST_TP"
@@ -372,7 +409,6 @@ else
 fi
 if [ "$TP_COUNT" -gt 0 ]; then mv -f "$TMP_TG_CONF" "$DST_TG_CONF"; else rm -f "$DST_TG_CONF"; fi
 if [ "$TP_MODE" = gesture ]; then
-    for d in "$BASE/system/usr" "${DST_TG_KL%/*}" "${DST_TG_IDC%/*}"; do [ -d "$d" ] || mkdir -m 0755 "$d"; done
     mv -f "$TMP_TG_KL" "$DST_TG_KL"
     mv -f "$TMP_TG_IDC" "$DST_TG_IDC"
 else
@@ -380,6 +416,7 @@ else
     rmdir "${DST_TG_KL%/*}" "${DST_TG_IDC%/*}" "$BASE/system/usr" 2>/dev/null || :
 fi
 sync
-# Gesture keys and thresholds take effect now; a mode change needs the reboot like the other files.
-touch_start
+# Changed thresholds take effect now. New gesture keys and modes need the reboot like the other
+# files, since Android reads key layouts and the excluded device list at boot.
+touch_start || echo "WARNING: 保存しましたが、タッチ操作の常駐プログラムを起動し直せませんでした。$(tail -n 1 "$TG_LOG" 2>/dev/null)"
 echo OK
