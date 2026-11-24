@@ -116,9 +116,10 @@ static int create_keyboard(const struct tg_config *cfg)
     if (fd < 0) { fprintf(stderr, "touchgestured: /dev/uinput: %s\n", strerror(errno)); return -1; }
     ioctl(fd, UI_SET_EVBIT, EV_KEY);
     for (int i = 0; i < 4; i++) ioctl(fd, UI_SET_KEYBIT, MOD_KEYS[i]);
-    for (int f = 0; f < TG_MAX_FINGERS; f++)
-        for (int g = 0; g < TG_GESTURE_COUNT; g++)
-            if (cfg->bind[f][g].scancode) ioctl(fd, UI_SET_KEYBIT, cfg->bind[f][g].scancode);
+    for (int l = 0; l < TG_LAYER_COUNT; l++)
+        for (int f = 0; f < TG_MAX_FINGERS; f++)
+            for (int g = 0; g < TG_GESTURE_COUNT; g++)
+                if (cfg->bind[l][f][g].scancode) ioctl(fd, UI_SET_KEYBIT, cfg->bind[l][f][g].scancode);
     struct input_id id = { .bustype = BUS_VIRTUAL };
     if (create_device(fd, &id, KEYBOARD_NAME)) { close(fd); return -1; }
     return fd;

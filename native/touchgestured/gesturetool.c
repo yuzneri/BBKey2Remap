@@ -70,13 +70,15 @@ static void dump(const struct tg_config *c)
     printf("tap_ms %d\nhold_ms %d\ngather_ms %d\nafter_key_ms %d\n", c->tap_ms, c->hold_ms, c->gather_ms, c->after_key_ms);
     for (int f = 0; f < TG_MAX_FINGERS; f++) {
         if (c->pass[f]) printf("pass %d\n", f + 1);
-        for (int g = 0; g < TG_GESTURE_COUNT; g++) {
-            const struct tg_binding *b = &c->bind[f][g];
-            if (!b->scancode) continue;
-            char mods[32];
-            tg_mods_format(b->mods, mods, sizeof mods);
-            printf("bind %d %s key 0x%x%s%s\n", f + 1, tg_gesture_name(g), b->scancode, b->mods ? " " : "", b->mods ? mods : "");
-        }
+        for (int l = 0; l < TG_LAYER_COUNT; l++)
+            for (int g = 0; g < TG_GESTURE_COUNT; g++) {
+                const struct tg_binding *b = &c->bind[l][f][g];
+                if (!b->scancode) continue;
+                char mods[32];
+                tg_mods_format(b->mods, mods, sizeof mods);
+                printf("bind %s%s%d %s key 0x%x%s%s\n", tg_layer_name(l), l ? " " : "", f + 1, tg_gesture_name(g),
+                       b->scancode, b->mods ? " " : "", b->mods ? mods : "");
+            }
     }
     for (int i = 0; i < c->nmods; i++) {
         char mod[32];

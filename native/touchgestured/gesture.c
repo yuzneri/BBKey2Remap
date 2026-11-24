@@ -24,20 +24,49 @@ void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_
 /* A finger on the surface that can take part in a gesture. */
 static bool usable(const struct tg_contact *c) { return c->active && c->has_pos && !c->on_key; }
 
+/* TG_MOD_* bits of the physical modifiers held. */
+static uint8_t held_mods(const struct tg_state *st)
+{
+    uint8_t mods = 0;
+    for (int i = 0; i < st->cfg.nmods; i++)
+        if (st->mods_down & (1u << i)) mods |= st->cfg.mods[i].mod;
+    return mods;
+}
+
+/*
+ * The layer whose binding gesture G of FINGERS uses now: the first held layer, in tg_layer order,
+ * that binds it, otherwise the base layer.
+ */
+static enum tg_layer layer_of(const struct tg_state *st, int fingers, enum tg_gesture g)
+{
+    uint8_t held = held_mods(st);
+    for (int l = TG_LAYER_SHIFT; l < TG_LAYER_COUNT; l++)
+        if ((held & tg_layer_mod(l)) && st->cfg.bind[l][fingers - 1][g].scancode) return l;
+    return TG_LAYER_BASE;
+}
+
+static const struct tg_binding *binding(const struct tg_state *st, int fingers, enum tg_gesture g)
+{
+    return &st->cfg.bind[layer_of(st, fingers, g)][fingers - 1][g];
+}
+
 static bool any_bound(const struct tg_state *st, int fingers, int first, int last)
 {
     for (int g = first; g <= last; g++)
-        if (st->cfg.bind[fingers - 1][g].scancode) return true;
+        if (binding(st, fingers, g)->scancode) return true;
     return false;
 }
 
-/* Sends the gesture's key, with the physical modifiers held, if it has one; returns whether it did. */
+/*
+ * Sends the gesture's key if it has one; returns whether it did. The physical modifiers held are
+ * added, except the one whose layer the key comes from, and SYM, which has no key to send.
+ */
 static bool emit(struct tg_state *st, enum tg_gesture g)
 {
-    struct tg_binding b = st->cfg.bind[st->fingers - 1][g];
+    enum tg_layer l = layer_of(st, st->fingers, g);
+    struct tg_binding b = st->cfg.bind[l][st->fingers - 1][g];
     if (!b.scancode) return false;
-    for (int i = 0; i < st->cfg.nmods; i++)
-        if (st->mods_down & (1u << i)) b.mods |= st->cfg.mods[i].mod;
+    b.mods |= held_mods(st) & ~tg_layer_mod(l) & ~TG_MOD_SYM;
     st->sink.key(st->sink.ctx, st->now, st->fingers, g, &b);
     return true;
 }
@@ -83,11 +112,10 @@ static void send_pending(struct tg_state *st)
 static void track(struct tg_state *st)
 {
     if (!swipes_bound(st) || st->now - st->t0 < MS(st->cfg.hold_ms)) return;
-    const struct tg_binding *b = st->cfg.bind[st->fingers - 1];
     double start = start_units(st), step = st->cfg.step_mm * st->units_per_mm;
     if (!st->swiping) {
-        double cx = b[TG_SWIPE_LEFT].scancode || b[TG_SWIPE_RIGHT].scancode ? fabs(st->ax) : -1;
-        double cy = b[TG_SWIPE_UP].scancode || b[TG_SWIPE_DOWN].scancode ? fabs(st->ay) : -1;
+        double cx = any_bound(st, st->fingers, TG_SWIPE_LEFT, TG_SWIPE_RIGHT) ? fabs(st->ax) : -1;
+        double cy = any_bound(st, st->fingers, TG_SWIPE_UP, TG_SWIPE_DOWN) ? fabs(st->ay) : -1;
         if (cx < start && cy < start) return;
         st->swiping = true;
         st->axis = cy > cx;
@@ -169,10 +197,7 @@ static void finish(struct tg_state *st)
     double start = start_units(st);
     if (st->ax * st->ax + st->ay * st->ay >= start * start && may_be_flick(st)) {
         enum tg_gesture g = flick_direction(st->ax, st->ay);
-        if (st->cfg.bind[st->fingers - 1][g].scancode) {
-            emit(st, g);
-            return;
-        }
+        if (emit(st, g)) return;
     }
     if (st->pending) send_pending(st);
     else if (held <= MS(st->cfg.tap_ms) && st->max_d2 < start * start) emit(st, TG_TAP);

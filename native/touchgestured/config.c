@@ -16,9 +16,16 @@ static const char *const GESTURE_NAMES[TG_GESTURE_COUNT] = {
     "tap",
 };
 
-static const char *const MOD_NAMES[] = { "ctrl", "shift", "alt", "meta" };
+/* In TG_MOD_* bit order. */
+static const char *const MOD_NAMES[] = { "ctrl", "shift", "alt", "meta", "sym" };
+#define MOD_COUNT 5
+
+static const char *const LAYER_NAMES[TG_LAYER_COUNT] = { "", "shift", "alt", "ctrl", "sym" };
+static const uint8_t LAYER_MODS[TG_LAYER_COUNT] = { 0, TG_MOD_SHIFT, TG_MOD_ALT, TG_MOD_CTRL, TG_MOD_SYM };
 
 const char *tg_gesture_name(enum tg_gesture g) { return GESTURE_NAMES[g]; }
+const char *tg_layer_name(enum tg_layer l) { return LAYER_NAMES[l]; }
+uint8_t tg_layer_mod(enum tg_layer l) { return LAYER_MODS[l]; }
 
 void tg_config_defaults(struct tg_config *cfg)
 {
@@ -36,7 +43,7 @@ void tg_mods_format(uint8_t mods, char *buf, size_t len)
 {
     size_t used = 0;
     buf[0] = '\0';
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < MOD_COUNT; i++) {
         if (!(mods & (1 << i))) continue;
         used += (size_t)snprintf(buf + used, used < len ? len - used : 0, "%s%s", used ? "+" : "", MOD_NAMES[i]);
     }
@@ -93,15 +100,16 @@ static int parse_fingers(struct parser *p, const char *s)
     return fail(p, "finger count must be 1-%d", TG_MAX_FINGERS);
 }
 
-static int parse_mods(const char *s, uint8_t *out)
+/* Modifier names joined by "+" into TG_MOD_* bits, accepting only the ones in ALLOWED. */
+static int parse_mods(const char *s, uint8_t allowed, uint8_t *out)
 {
     uint8_t mods = 0;
     char buf[MAX_LINE];
     snprintf(buf, sizeof buf, "%s", s);
     for (char *save, *tok = strtok_r(buf, "+", &save); tok; tok = strtok_r(NULL, "+", &save)) {
         int i = 0;
-        while (i < 4 && strcmp(tok, MOD_NAMES[i])) i++;
-        if (i == 4 || (mods & (1 << i))) return -1;
+        while (i < MOD_COUNT && strcmp(tok, MOD_NAMES[i])) i++;
+        if (i == MOD_COUNT || !(allowed & (1 << i)) || (mods & (1 << i))) return -1;
         mods |= (uint8_t)(1 << i);
     }
     if (!mods || s[0] == '+' || s[strlen(s) - 1] == '+' || strstr(s, "++")) return -1;
@@ -139,9 +147,19 @@ static int parse_threshold(struct parser *p, int i, char **tok, int ntok)
     return 0;
 }
 
-/* bind FINGERS swipe|flick DIRECTION key SCANCODE [MODS]  or  bind FINGERS tap key SCANCODE [MODS] */
+/*
+ * bind [LAYER] FINGERS swipe|flick DIRECTION key SCANCODE [MODS]
+ * bind [LAYER] FINGERS tap key SCANCODE [MODS]
+ */
 static int parse_bind(struct parser *p, char **tok, int ntok)
 {
+    int layer = TG_LAYER_BASE;
+    for (int l = TG_LAYER_SHIFT; ntok > 1 && l < TG_LAYER_COUNT; l++)
+        if (!strcmp(tok[1], LAYER_NAMES[l])) layer = l;
+    if (layer != TG_LAYER_BASE) {
+        tok++;
+        ntok--;
+    }
     int fingers = parse_fingers(p, ntok > 1 ? tok[1] : NULL);
     if (fingers < 0) return -1;
     if (ntok < 3) return fail(p, "bind needs a gesture");
@@ -158,10 +176,10 @@ static int parse_bind(struct parser *p, char **tok, int ntok)
     long code;
     if (!parse_code(tok[at + 1], MAX_SCANCODE, &code)) return fail(p, "scancode must be 1-0x%x", MAX_SCANCODE);
     uint8_t mods = 0;
-    if (ntok - at == 3 && parse_mods(tok[at + 2], &mods))
+    if (ntok - at == 3 && parse_mods(tok[at + 2], TG_MOD_CTRL | TG_MOD_SHIFT | TG_MOD_ALT | TG_MOD_META, &mods))
         return fail(p, "modifiers must be ctrl, shift, alt and meta joined by +");
-    struct tg_binding *b = &p->cfg->bind[fingers - 1][g];
-    if (b->scancode) return fail(p, "%d-finger %s is bound twice", fingers, name);
+    struct tg_binding *b = &p->cfg->bind[layer][fingers - 1][g];
+    if (b->scancode) return fail(p, "%s%s%d-finger %s is bound twice", LAYER_NAMES[layer], layer ? " " : "", fingers, name);
     if (p->cfg->pass[fingers - 1]) return pass_conflict(p, fingers);
     b->scancode = (uint16_t)code;
     b->mods = mods;
@@ -175,7 +193,7 @@ static int parse_mod(struct parser *p, char **tok, int ntok)
     uint8_t mod;
     if (ntok != 3) return fail(p, "mod takes a scancode and a modifier");
     if (!parse_code(tok[1], MAX_SCANCODE, &code)) return fail(p, "scancode must be 1-0x%x", MAX_SCANCODE);
-    if (parse_mods(tok[2], &mod) || (mod & (mod - 1))) return fail(p, "modifier must be ctrl, shift, alt or meta");
+    if (parse_mods(tok[2], 0xff, &mod) || (mod & (mod - 1))) return fail(p, "modifier must be ctrl, shift, alt, meta or sym");
     for (int i = 0; i < c->nmods; i++)
         if (c->mods[i].scancode == code) return fail(p, "scancode %ld has two modifiers", code);
     if (c->nmods == TG_MAX_MODS) return fail(p, "more than %d modifier keys", TG_MAX_MODS);
@@ -203,8 +221,9 @@ static int parse_line(struct parser *p, char *line)
         int fingers = parse_fingers(p, ntok == 2 ? tok[1] : NULL);
         if (fingers < 0) return -1;
         if (p->cfg->pass[fingers - 1]) return fail(p, "pass %d is set twice", fingers);
-        for (int g = 0; g < TG_GESTURE_COUNT; g++)
-            if (p->cfg->bind[fingers - 1][g].scancode) return pass_conflict(p, fingers);
+        for (int l = 0; l < TG_LAYER_COUNT; l++)
+            for (int g = 0; g < TG_GESTURE_COUNT; g++)
+                if (p->cfg->bind[l][fingers - 1][g].scancode) return pass_conflict(p, fingers);
         p->cfg->pass[fingers - 1] = true;
         return 0;
     }

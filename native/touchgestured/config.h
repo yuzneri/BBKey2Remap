@@ -19,7 +19,14 @@ enum tg_gesture {
     TG_GESTURE_COUNT
 };
 
-enum { TG_MOD_CTRL = 1, TG_MOD_SHIFT = 2, TG_MOD_ALT = 4, TG_MOD_META = 8 };
+/* TG_MOD_SYM is only a physical modifier ("mod" lines): it selects a layer but is never sent. */
+enum { TG_MOD_CTRL = 1, TG_MOD_SHIFT = 2, TG_MOD_ALT = 4, TG_MOD_META = 8, TG_MOD_SYM = 16 };
+
+/*
+ * Gesture layers: while a physical modifier is held, a gesture bound in its layer sends that key
+ * instead of the base layer's. Listed in the order a layer is chosen when several are held.
+ */
+enum tg_layer { TG_LAYER_BASE, TG_LAYER_SHIFT, TG_LAYER_ALT, TG_LAYER_CTRL, TG_LAYER_SYM, TG_LAYER_COUNT };
 
 /* A key to send: a scancode of the virtual keyboard plus TG_MOD_* bits. scancode 0 means unbound. */
 struct tg_binding {
@@ -35,7 +42,7 @@ struct tg_config {
     int hold_ms;          /* no key is sent before a touch is this old */
     int gather_ms;        /* fingers landing this soon after the first one join the gesture */
     int after_key_ms;     /* touches starting this soon after a key press are ignored */
-    struct tg_binding bind[TG_MAX_FINGERS][TG_GESTURE_COUNT]; /* [fingers - 1][gesture] */
+    struct tg_binding bind[TG_LAYER_COUNT][TG_MAX_FINGERS][TG_GESTURE_COUNT]; /* [layer][fingers - 1][gesture] */
     bool pass[TG_MAX_FINGERS];                                /* [fingers - 1]: hand to the ROM */
     struct { uint16_t scancode; uint8_t mod; } mods[TG_MAX_MODS]; /* physical modifier keys */
     int nmods;
@@ -58,6 +65,12 @@ void tg_config_print_thresholds(FILE *out);
 
 /* "swipe up", "flick down-left", "tap": the settings-file spelling of a gesture. */
 const char *tg_gesture_name(enum tg_gesture g);
+
+/* "shift", "alt", "ctrl", "sym", or "" for the base layer. */
+const char *tg_layer_name(enum tg_layer l);
+
+/* The TG_MOD_* bit of the modifier that selects layer L (0 for the base layer). */
+uint8_t tg_layer_mod(enum tg_layer l);
 
 /* Writes TG_MOD_* bits as "ctrl+shift", or "-" for none, into buf. */
 void tg_mods_format(uint8_t mods, char *buf, size_t len);

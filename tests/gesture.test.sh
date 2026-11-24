@@ -58,6 +58,15 @@ check 'passthrough after gestures of the same count is rejected at the pass line
     '2: 1-finger gestures are both passed through and bound'
 check 'pass set twice is rejected' rejects 'pass 2\npass 2\n' 'pass 2 is set twice'
 check 'a physical modifier key takes a single modifier' rejects 'mod 42 ctrl+shift\n' 'modifier must be'
+check 'a gesture may be bound in a modifier layer' accepts 'bind shift 1 swipe left key 0x100 ctrl\nbind sym 2 tap key 3\nmod 100 sym\n' \
+    "${DEFAULTS}bind shift 1 swipe left key 0x100 ctrl\nbind sym 2 tap key 0x3\nmod 100 sym\n"
+check 'a gesture bound twice in one layer is rejected' rejects 'bind alt 1 tap key 1\nbind alt 1 tap key 2\n' 'alt 1-finger tap is bound twice'
+check 'the same gesture may be bound in different layers' accepts 'bind 1 tap key 1\nbind ctrl 1 tap key 2\n' \
+    "${DEFAULTS}bind 1 tap key 0x1\nbind ctrl 1 tap key 0x2\n"
+check 'SYM cannot be sent with a key' rejects 'bind 1 tap key 1 sym\n' 'modifiers must be'
+check 'a layer binding conflicts with passthrough of its finger count' rejects 'pass 1\nbind alt 1 tap key 1\n' \
+    '1-finger gestures are both passed through and bound'
+check 'an unknown layer is rejected' rejects 'bind meta 1 tap key 1\n' 'finger count must be 1-3'
 check 'a physical key with two modifiers is rejected' rejects 'mod 42 shift\nmod 42 ctrl\n' 'scancode 42 has two modifiers'
 long=$(printf '%0300d' 0)
 check 'overlong lines are rejected' rejects "# $long\n" 'longer than 256'
@@ -414,6 +423,34 @@ check 'a modifier stays held while another key for it is down' replays_keys "$MO
     '570 1-finger swipe right key 0x4 shift\n'
 check 'keys not listed as modifiers add nothing' replays_keys "$MODS$SWIPES" \
     "$(stroke 500 600 100,200 163,200)600 -0\n" '0 KEY_LEFTALT DOWN\n' '570 1-finger swipe right key 0x4\n'
+
+# Layers: while a physical modifier is held, a gesture bound in its layer sends that key.
+# Scan codes as on the KEY2: 42 Shift, 56 Alt, 100 SYM (KEY_RIGHTALT), 110 Speed key (KEY_INSERT).
+LMODS='mod 42 shift\nmod 56 alt\nmod 100 sym\nmod 110 ctrl\n'
+LAYERED="$LMODS${SWIPES}bind shift 1 swipe right key 0x40\nbind alt 1 swipe right key 0x41\nbind sym 1 swipe right key 0x42\n"
+RIGHT="$(stroke 10 110 100,200 163,200)110 -0\n"
+LEFT="$(stroke 10 110 163,200 100,200)110 -0\n"
+check "a gesture bound in the held modifier's layer sends that key, without the modifier" replays_keys "$LAYERED" \
+    "$RIGHT" '0 KEY_LEFTSHIFT DOWN\n' '80 1-finger swipe right key 0x40\n'
+check 'a gesture the layer does not bind sends the base key with the modifier' replays_keys "$LAYERED" \
+    "$LEFT" '0 KEY_LEFTSHIFT DOWN\n' '80 1-finger swipe left key 0x3 shift\n'
+check 'with two modifiers held the first layer binding the gesture is used, the other modifier added' replays_keys "$LAYERED" \
+    "$RIGHT" '0 KEY_LEFTALT DOWN\n1 KEY_LEFTSHIFT DOWN\n' '80 1-finger swipe right key 0x40 alt\n'
+check 'a layer without the gesture leaves it to the next held layer' replays_keys "${LMODS}${SWIPES}bind alt 1 swipe right key 0x41\n" \
+    "$RIGHT" '0 KEY_LEFTALT DOWN\n1 KEY_LEFTSHIFT DOWN\n' '80 1-finger swipe right key 0x41 shift\n'
+check 'SYM selects its layer and is never sent' replays_keys "$LAYERED" \
+    "$RIGHT$(echo)$(stroke 300 400 163,200 100,200 | sed 's/ 0=/ 1=/g')400 -1\n" '0 KEY_RIGHTALT DOWN\n' \
+    '80 1-finger swipe right key 0x42\n370 1-finger swipe left key 0x3\n'
+check 'pressing SYM does not make later touches ignored' replays_keys "$LMODS$TAPS" \
+    '100 0=500,200\n150 -0\n' '0 KEY_RIGHTALT DOWN\n20 KEY_RIGHTALT UP\n' '150 1-finger tap key 0x1\n'
+check 'the Speed key as Ctrl selects the ctrl layer' replays_keys "${LMODS}${SWIPES}bind ctrl 1 swipe right key 0x44\n" \
+    "$RIGHT" '0 KEY_INSERT DOWN\n' '80 1-finger swipe right key 0x44\n'
+check 'a flick bound only in a layer is recognised while its modifier is held' replays_keys \
+    "${LMODS}${SWIPES}bind shift 1 flick up key 0x45\n" "$(stroke 10 50 500,250 500,40)50 -0\n" '0 KEY_LEFTSHIFT DOWN\n' \
+    '50 1-finger flick up key 0x45\n'
+check 'without the modifier the same movement is a swipe' replays_keys \
+    "${LMODS}${SWIPES}bind shift 1 flick up key 0x45\n" "$(stroke 10 50 500,250 500,40)50 -0\n" '0 KEY_LEFTSHIFT DOWN\n0 KEY_LEFTSHIFT UP\n' \
+    '20 1-finger swipe up key 0x1\n30 1-finger swipe up key 0x1\n50 1-finger swipe up key 0x1\n'
 
 conf "pass 1\n$MODS"
 { touches '0 0=500,200\n20 0=510,200\n60 0=530,200\n100 -0\n'; keys '50 KEY_H DOWN\n'; } | sort -s -t']' -k1,1 > "$WORK/k.log"
