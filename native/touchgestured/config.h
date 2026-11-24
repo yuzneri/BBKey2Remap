@@ -10,11 +10,10 @@
 #define TG_MAX_FINGERS 3
 #define TG_MAX_MODS 16
 
-/* Gestures in the order of tg_gesture_names(); swipes use 4 directions, flicks 8. */
+/* Gestures in the order of tg_gesture_names(); swipes and flicks use the same 4 directions. */
 enum tg_gesture {
     TG_SWIPE_UP, TG_SWIPE_DOWN, TG_SWIPE_LEFT, TG_SWIPE_RIGHT,
     TG_FLICK_UP, TG_FLICK_DOWN, TG_FLICK_LEFT, TG_FLICK_RIGHT,
-    TG_FLICK_UP_LEFT, TG_FLICK_UP_RIGHT, TG_FLICK_DOWN_LEFT, TG_FLICK_DOWN_RIGHT,
     TG_TAP,
     TG_GESTURE_COUNT
 };

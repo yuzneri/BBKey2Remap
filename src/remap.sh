@@ -115,8 +115,7 @@ check_touch() {
             int=${value%%.*}; frac=${value#"$int"}; frac=${frac#.}
             [ "${#int}" -le 5 ] && [ "${#frac}" -le 6 ] || fail 'タッチ操作の設定が正しくありません。' ;;
         [123]_swipe_up|[123]_swipe_down|[123]_swipe_left|[123]_swipe_right|[123]_tap|\
-        [123]_flick_up|[123]_flick_down|[123]_flick_left|[123]_flick_right|\
-        [123]_flick_upleft|[123]_flick_upright|[123]_flick_downleft|[123]_flick_downright)
+        [123]_flick_up|[123]_flick_down|[123]_flick_left|[123]_flick_right)
             case "$value" in [A-Z0-9]*) ;; *) fail 'タッチ操作の設定が正しくありません。' ;; esac
             case "$value" in *[!A-Za-z0-9_+]*|*+|*++*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
         [123]_pass) [ "$id" = "$gesture" ] && [ "$value" = on ] || fail 'タッチ操作の設定が正しくありません。' ;;

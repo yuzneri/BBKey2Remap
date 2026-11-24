@@ -26,8 +26,8 @@ check 'an empty settings file gives the default thresholds and no gestures' acce
 check 'comments, blank lines and tabs are ignored' accepts '# c\n\n\tstart_mm\t2.5  \n' \
     'start_mm 2.5\nstep_mm 3\nflick_mm_s 60\ntap_ms 200\nhold_ms 0\ngather_ms 150\nafter_key_ms 300\n'
 check 'every kind of line is read' accepts \
-    'step_mm 4\nflick_mm_s 300\ntap_ms 150\nhold_ms 40\ngather_ms 120\nafter_key_ms 500\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 flick down-right key 261\nbind 2 tap key 0x102 meta\npass 3\nmod 42 shift\nmod 0x1d ctrl\n' \
-    'start_mm 2\nstep_mm 4\nflick_mm_s 300\ntap_ms 150\nhold_ms 40\ngather_ms 120\nafter_key_ms 500\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 flick down-right key 0x105\nbind 2 tap key 0x102 meta\npass 3\nmod 42 shift\nmod 29 ctrl\n'
+    'step_mm 4\nflick_mm_s 300\ntap_ms 150\nhold_ms 40\ngather_ms 120\nafter_key_ms 500\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 flick down key 261\nbind 2 tap key 0x102 meta\npass 3\nmod 42 shift\nmod 0x1d ctrl\n' \
+    'start_mm 2\nstep_mm 4\nflick_mm_s 300\ntap_ms 150\nhold_ms 40\ngather_ms 120\nafter_key_ms 500\nbind 1 swipe left key 0x100 ctrl+shift\nbind 2 flick down key 0x105\nbind 2 tap key 0x102 meta\npass 3\nmod 42 shift\nmod 29 ctrl\n'
 check 'modifiers may be listed in any order' accepts 'bind 1 tap key 1 meta+alt+shift+ctrl\n' \
     "${DEFAULTS}bind 1 tap key 0x1 ctrl+shift+alt+meta\n"
 check 'a file without a final newline is read' accepts 'tap_ms 100' \
@@ -42,6 +42,7 @@ check 'a threshold value must be a plain number' rejects 'step_mm 3mm\n' 'step_m
 check 'a threshold needs exactly one value' rejects 'step_mm 3 4\n' 'step_mm takes one value'
 check 'finger counts other than 1-3 are rejected' rejects 'bind 4 tap key 1\n' 'finger count must be 1-3'
 check 'unknown gestures are rejected' rejects 'bind 1 swipe up-left key 1\n' 'unknown gesture "swipe up-left"'
+check 'flicks have no diagonals' rejects 'bind 1 flick up-left key 1\n' 'unknown gesture "flick up-left"'
 check 'a swipe needs a direction' rejects 'bind 1 swipe\n' 'swipe needs a direction'
 check 'a tap takes no direction' rejects 'bind 1 tap up key 1\n' 'bind ends with key'
 check 'scancode 0 is rejected' rejects 'bind 1 tap key 0\n' 'scancode must be'
@@ -190,21 +191,20 @@ check 'no swipe key is sent before hold_ms' replays "hold_ms 300\n$SWIPES" \
 check 'a finger that moved and stopped starts its swipe when hold_ms passes' replays "hold_ms 300\n$SWIPES" \
     "$(stroke 0 100 100,200 205,200)600 -0\n" '300 1-finger swipe right key 0x4\n300 1-finger swipe right key 0x4\n'
 
-FLICKS='bind 1 flick up key 0x11\nbind 1 flick down key 0x12\nbind 1 flick left key 0x13\nbind 1 flick right key 0x14\nbind 1 flick up-left key 0x15\nbind 1 flick up-right key 0x16\nbind 1 flick down-left key 0x17\nbind 1 flick down-right key 0x18\n'
+FLICKS='bind 1 flick up key 0x11\nbind 1 flick down key 0x12\nbind 1 flick left key 0x13\nbind 1 flick right key 0x14\n'
 # 10 mm in 40 ms is 250 mm/s, over flick_mm_s (150); 10 mm in 500 ms is 20 mm/s.
 check 'a fast movement ending in a lift is a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)40 -0\n" '40 1-finger flick right key 0x14\n'
 check 'a slow movement is not a flick' replays "$FLICKS" "$(stroke 0 500 100,200 310,200)500 -0\n" ''
 # 1.4 mm in 4 ms is 357 mm/s: fast enough, but short of start_mm.
 check 'a flick must cover start_mm' replays "$FLICKS" '0 0=500,200\n2 0=530,200\n4 -0\n' ''
 check 'a finger that stopped before lifting is not a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)200 -0\n" ''
-# NAME:CODE:FROM:TO. The last two lie 4 and 6 degrees inside a sector border (22.5 and 67.5 degrees).
-for dir in up:11:500,200:500,0 down:12:500,0:500,200 left:13:500,200:290,200 up-left:15:500,200:350,50 \
-    up-right:16:500,200:650,50 down-left:17:500,50:350,200 down-right:18:500,50:650,200 \
-    up-right:16:500,200:700,100 up:11:500,200:560,0; do
+# NAME:CODE:FROM:TO. The last four are slanting: each goes to the larger of its two axes.
+for dir in up:11:500,200:500,0 down:12:500,0:500,200 left:13:500,200:290,200 right:14:290,200:500,200 \
+    right:14:500,200:700,100 up:11:500,200:560,0 up:11:500,200:380,50 left:13:500,50:300,180; do
     IFS=: read -r name code from to <<EOF
 $dir
 EOF
-    check "flicks are told apart in 8 directions: $name from $from to $to" replays "$FLICKS" \
+    check "flicks are told apart in 4 directions: $name from $from to $to" replays "$FLICKS" \
         "$(stroke 0 40 "$from" "$to")40 -0\n" "40 1-finger flick $name key 0x$code\n"
 done
 

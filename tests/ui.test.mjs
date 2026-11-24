@@ -106,22 +106,22 @@ test('status lines parse into diagnostics', () => {
     ['off', 'foreign', 'no', ['/system/etc/excluded-input-devices.xml'], ['other']]);
 });
 
-test('gestures: the 13 of touchgestured, their names, and their key values', () => {
-  assert.equal(KCM.TOUCH_GESTURES.length, 13);
+test('gestures: the 9 of touchgestured, their names, and their key values', () => {
+  assert.equal(KCM.TOUCH_GESTURES.length, 9);
   assert.deepEqual(KCM.TOUCH_GESTURES.map((g) => g.id).slice(0, 5), ['swipe_up', 'swipe_down', 'swipe_left', 'swipe_right', 'flick_up']);
   assert.deepEqual(KCM.TOUCH_GESTURES.map((g) => g.id), ['swipe_up', 'swipe_down', 'swipe_left', 'swipe_right',
-    'flick_up', 'flick_down', 'flick_left', 'flick_right', 'flick_upleft', 'flick_upright', 'flick_downleft', 'flick_downright', 'tap']);
+    'flick_up', 'flick_down', 'flick_left', 'flick_right', 'tap']);
   assert.throws(() => KCM.validate({ 'tp:2_pass': 'on', 'tp:2_tap': 'ENTER' }), /2本指/);
   assert.throws(() => KCM.validate({ 'tp:2_pass': 'on', 'tp:sym_2_tap': 'ENTER' }), /2本指/);
-  assert.ok(KCM.validate({ 'tp:shift_1_swipe_left': 'MOVE_HOME+shift', 'tp:ctrl_3_flick_downright': 'ENTER', 'tp:1_swipe_left': 'DPAD_LEFT' }));
-  for (const bad of ['tp:meta_1_tap', 'tp:shift_1_pass', 'tp:shift_shift_1_tap', 'tp:_1_tap']) {
+  assert.ok(KCM.validate({ 'tp:shift_1_swipe_left': 'MOVE_HOME+shift', 'tp:ctrl_3_flick_down': 'ENTER', 'tp:1_swipe_left': 'DPAD_LEFT' }));
+  for (const bad of ['tp:meta_1_tap', 'tp:shift_1_pass', 'tp:shift_shift_1_tap', 'tp:_1_tap', 'tp:1_flick_upleft']) {
     assert.throws(() => KCM.validate({ [bad]: bad.endsWith('pass') ? 'on' : 'ENTER' }), bad);
   }
-  assert.equal(KCM.gestureName('tp:shift_2_flick_upleft'), 'Shift＋2本指で払う↖');
+  assert.equal(KCM.gestureName('tp:shift_2_flick_left'), 'Shift＋2本指で払う←');
   assert.equal(KCM.gestureId('sym', '3', 'tap'), 'tp:sym_3_tap');
   assert.equal(KCM.gestureId('', '1', 'swipe_up'), 'tp:1_swipe_up');
   assert.ok(KCM.validate({ 'tp:2_pass': 'on', 'tp:1_tap': 'ENTER' }));
-  assert.equal(KCM.gestureName('tp:2_flick_upleft'), '2本指で払う↖');
+  assert.equal(KCM.gestureName('tp:2_flick_up'), '2本指で払う↑');
   assert.equal(KCM.gestureName('tp:1_tap'), '1本指でタップ');
   for (const g of KCM.TOUCH_GESTURES) assert.ok(KCM.validate({ ['tp:3_' + g.id]: 'ENTER' }), g.id);
   assert.deepEqual(KCM.parseTouchKey('DPAD_LEFT+shift+ctrl'), { code: 'DPAD_LEFT', mods: ['ctrl', 'shift'], once: false });
@@ -175,7 +175,7 @@ test('status lines give the thresholds from touchgestured and whether it runs', 
 
 test('touch surface settings: the modes, thresholds, gesture keys and passthrough', () => {
   const good = { 'tp:mode': 'gesture', 'tp:step_mm': '2.5', 'tp:tap_ms': '200', 'tp:1_swipe_left': 'DPAD_LEFT+shift',
-    'tp:1_flick_upleft': 'MOVE_HOME+ctrl+alt', 'tp:3_tap': 'ENTER', 'tp:2_pass': 'on', 'sym:H': 'R_DPAD_LEFT' };
+    'tp:1_flick_up': 'MOVE_HOME+ctrl+alt', 'tp:3_tap': 'ENTER', 'tp:2_pass': 'on', 'sym:H': 'R_DPAD_LEFT' };
   assert.deepEqual(KCM.validate(good), Object.assign(Object.create(null), good));
   assert.deepEqual(KCM.validate({ 'tp:mode': 'off' }), Object.assign(Object.create(null), { 'tp:mode': 'off' }));
   for (const bad of [{ 'tp:mode': 'on' }, { 'tp:mode': 'rom' }, { 'tp:speed': 'off' }, { 'tp:mode': 'R_TAB' },

@@ -109,7 +109,7 @@
   // remap.sh's grammar for a threshold; the length also keeps a settings line under its 256 bytes.
   const THRESHOLD_FORM = /^[0-9]{1,5}(\.[0-9]{1,6})?$/;
   const TOUCH_THRESHOLDS = ['start_mm', 'step_mm', 'flick_mm_s', 'tap_ms', 'hold_ms', 'gather_ms', 'after_key_ms'];
-  const TOUCH_GESTURE = /^tp:((shift|alt|ctrl|sym)_)?[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right|upleft|upright|downleft|downright)|tap)$/;
+  const TOUCH_GESTURE = /^tp:((shift|alt|ctrl|sym)_)?[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right)|tap)$/;
   /** Gesture layers: while the physical modifier is held, its layer's gesture keys are used. */
   const TOUCH_LAYERS = [{ id: '', label: 'なし' }, { id: 'shift', label: 'Shift' }, { id: 'alt', label: 'Alt' },
     { id: 'ctrl', label: 'Ctrl' }, { id: 'sym', label: 'SYM' }];
@@ -135,19 +135,19 @@
     return /^[A-Z0-9][A-Z0-9_]*$/.test(code) && mods.every((m, i) => TOUCH_MODIFIERS.includes(m) && mods.indexOf(m) === i);
   }
 
-  const ARROWS = { up: '↑', down: '↓', left: '←', right: '→', upleft: '↖', upright: '↗', downleft: '↙', downright: '↘' };
+  const ARROWS = { up: '↑', down: '↓', left: '←', right: '→' };
   /** The gestures of one finger count, as the page lists them: {id ("swipe_up"), kind, dir}. */
   const TOUCH_GESTURES = [
     ...['up', 'down', 'left', 'right'].map((dir) => ({ id: 'swipe_' + dir, kind: 'swipe', dir })),
-    ...['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright'].map((dir) => ({ id: 'flick_' + dir, kind: 'flick', dir })),
+    ...['up', 'down', 'left', 'right'].map((dir) => ({ id: 'flick_' + dir, kind: 'flick', dir })),
     { id: 'tap', kind: 'tap', dir: '' },
   ];
   const TOUCH_KINDS = { swipe: 'なぞる', flick: '払う', tap: 'タップ' };
 
-  /** The setting ID of gesture G ("flick_upleft") of FINGERS ("2") in LAYER ("" or "shift"). */
+  /** The setting ID of gesture G ("flick_up") of FINGERS ("2") in LAYER ("" or "shift"). */
   function gestureId(layer, fingers, g) { return `tp:${layer ? layer + '_' : ''}${fingers}_${g}`; }
 
-  /** "Shift＋2本指で払う↖" for a gesture setting ID such as "tp:shift_2_flick_upleft". */
+  /** "Shift＋2本指で払う↑" for a gesture setting ID such as "tp:shift_2_flick_up". */
   function gestureName(id) {
     const m = /^tp:(?:(shift|alt|ctrl|sym)_)?([123])_(.*)$/.exec(id);
     const g = m && TOUCH_GESTURES.find((x) => x.id === m[3]);

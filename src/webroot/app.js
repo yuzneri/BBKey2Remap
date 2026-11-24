@@ -536,17 +536,11 @@ function renderFingers() {
     b.disabled = pass;
     return b;
   };
-  const byId = (id) => KCM.TOUCH_GESTURES.find((g) => g.id === id);
-  // Flicks are laid out by their direction around an empty centre.
-  const flicks = ['flick_upleft', 'flick_up', 'flick_upright', 'flick_left', '', 'flick_right', 'flick_downleft', 'flick_down', 'flick_downright']
-    .map((id) => (id ? cell(byId(id)) : el('span')));
+  const row = (kind) => el('div', { className: 'grow' }, ...KCM.TOUCH_GESTURES.filter((g) => g.kind === kind).map(cell));
   $('gestures').replaceChildren(
-    el('div', { className: 'glabel', textContent: 'なぞる' }),
-    el('div', { className: 'grow' }, ...KCM.TOUCH_GESTURES.filter((g) => g.kind === 'swipe').map(cell)),
-    el('div', { className: 'glabel', textContent: '払う' }),
-    el('div', { className: 'ggrid' }, ...flicks),
-    el('div', { className: 'glabel', textContent: 'タップ' }),
-    el('div', { className: 'grow' }, cell(byId('tap'))));
+    el('div', { className: 'glabel', textContent: 'なぞる' }), row('swipe'),
+    el('div', { className: 'glabel', textContent: '払う' }), row('flick'),
+    el('div', { className: 'glabel', textContent: 'タップ' }), row('tap'));
 }
 
 /** The key of the selected gesture: palette, modifiers and removal. */

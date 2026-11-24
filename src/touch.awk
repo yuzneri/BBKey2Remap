@@ -5,15 +5,12 @@
 # the "mod" lines. Each assignment is also kept as a "# KEY2_TP" line for remap.sh read.
 #
 # Each gesture of each layer has a fixed scan code on the gesture keyboard, so no table of codes
-# has to be stored: number i = layer * 39 + (fingers - 1) * 13 + the gesture's position in
-# touchgestured's list (config.h), code 0x200 + i, or 0x2e8 + (i - 192) for the last three so that
-# every code stays under KEY_MAX (0x2ff) and clear of the gamepad range BTN_TRIGGER_HAPPY
-# (0x2c0-0x2e7).
+# has to be stored: 0x200 + layer * 27 + (fingers - 1) * 9 + the gesture's position in
+# touchgestured's list (config.h). The 135 codes end at 0x286, below the gamepad range
+# BTN_TRIGGER_HAPPY (0x2c0-0x2e7).
 BEGIN {
-    n = split("swipe_up swipe_down swipe_left swipe_right flick_up flick_down flick_left flick_right " \
-              "flick_upleft flick_upright flick_downleft flick_downright tap", g, " ")
-    split("swipe up,swipe down,swipe left,swipe right,flick up,flick down,flick left,flick right," \
-          "flick up-left,flick up-right,flick down-left,flick down-right,tap", name, ",")
+    n = split("swipe_up swipe_down swipe_left swipe_right flick_up flick_down flick_left flick_right tap", g, " ")
+    split("swipe up,swipe down,swipe left,swipe right,flick up,flick down,flick left,flick right,tap", name, ",")
     for (i = 1; i <= n; i++) { index_of[g[i]] = i - 1; conf_name[g[i]] = name[i] }
     split("shift alt ctrl sym", l, " ")
     for (i = 1; i <= 4; i++) layer_of[l[i]] = i
@@ -61,8 +58,7 @@ FNR == NR {
         if (once) parts--
         modifiers = ""
         for (i = 2; i <= parts; i++) modifiers = modifiers (i > 2 ? "+" : "") p[i]
-        i = layer * 39 + (fingers - 1) * 13 + index_of[gesture]
-        code = i < 192 ? 512 + i : 744 + i - 192
+        code = 512 + layer * 27 + (fingers - 1) * 9 + index_of[gesture]
         print "bind " (layer ? layer_name " " : "") fingers " " conf_name[gesture] " key " code \
             (modifiers != "" ? " " modifiers : "") (once ? " once" : "")
         print "key " code " " p[1] > kl

@@ -10,7 +10,6 @@
 /* A moving finger reports a frame about every 8 ms; one silent this long has stopped. */
 #define STILL_US MS(50)
 /* Speed is measured over this much of the latest movement. */
-#define PI 3.14159265358979323846
 
 void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_mm, const struct tg_sink *sink)
 {
@@ -75,7 +74,7 @@ static bool emit(struct tg_state *st, enum tg_gesture g)
 static double start_units(const struct tg_state *st) { return st->cfg.start_mm * st->units_per_mm; }
 
 static bool swipes_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_SWIPE_UP, TG_SWIPE_RIGHT); }
-static bool flicks_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_FLICK_UP, TG_FLICK_DOWN_RIGHT); }
+static bool flicks_bound(const struct tg_state *st) { return any_bound(st, st->fingers, TG_FLICK_UP, TG_FLICK_RIGHT); }
 
 /*
  * Speed in mm/s since the fingers started to move (left half of start_mm behind): the distance over
@@ -135,16 +134,11 @@ static void track(struct tg_state *st)
     if (st->pending && !may_be_flick(st)) send_pending(st);
 }
 
-/* 8 directions of 45 degrees each, from the movement since the touch started (Y grows downwards). */
+/* The larger axis of the movement since the touch started (Y grows downwards), horizontal on a tie. */
 static enum tg_gesture flick_direction(double ax, double ay)
 {
-    static const enum tg_gesture SECTORS[8] = {
-        TG_FLICK_RIGHT, TG_FLICK_UP_RIGHT, TG_FLICK_UP, TG_FLICK_UP_LEFT,
-        TG_FLICK_LEFT, TG_FLICK_DOWN_LEFT, TG_FLICK_DOWN, TG_FLICK_DOWN_RIGHT,
-    };
-    double a = atan2(-ay, ax);
-    int sector = (int)floor((a + PI / 8) / (PI / 4));
-    return SECTORS[(sector % 8 + 8) % 8];
+    if (fabs(ax) >= fabs(ay)) return ax < 0 ? TG_FLICK_LEFT : TG_FLICK_RIGHT;
+    return ay < 0 ? TG_FLICK_UP : TG_FLICK_DOWN;
 }
 
 /* Whether a gesture with more than n fingers has anything to do; if not, there is no need to wait. */

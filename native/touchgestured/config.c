@@ -12,7 +12,6 @@
 static const char *const GESTURE_NAMES[TG_GESTURE_COUNT] = {
     "swipe up", "swipe down", "swipe left", "swipe right",
     "flick up", "flick down", "flick left", "flick right",
-    "flick up-left", "flick up-right", "flick down-left", "flick down-right",
     "tap",
 };
 
