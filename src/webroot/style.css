@@ -46,8 +46,7 @@ footer{position:sticky;bottom:0;margin-top:24px;padding:10px 0 12px;background:C
 .tab{flex:none;min-height:44px;padding:10px 14px;border-radius:9px 9px 0 0;position:relative}
 .tab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .badge{display:inline-block;min-width:22px;margin-left:6px;padding:0 6px;border-radius:11px;background:#a35400;color:#fff;font-size:13px;font-weight:700;line-height:22px;text-align:center}
-.tabs .badge{background:var(--line);color:inherit}
-.tab.active .badge{background:#fff;color:var(--accent)}
+.tab.active .badge{box-shadow:0 0 0 2px #fff}
 details{margin:6px 0}
 summary{cursor:pointer;font-size:14px;padding:4px 0}
 .mods{display:grid;grid-template-columns:1fr 1fr;gap:8px}
