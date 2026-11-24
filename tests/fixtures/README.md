@@ -8,6 +8,8 @@ All files here were written for this project. None is a copy of a device file.
 | `key2-base.kl` | Stands in for the KEY2 stock `/vendor/usr/keylayout/stmpe.kl`. No trailing newline. | `a6224942…f05f` |
 | `key2-v03-live.kcm` | `key2-base.kcm` with eleven SYM assignments, in the form module v0.3 writes (including its `# KEY2_GUI` markers). | `6bce1b2b…74a8` |
 | `synthetic-key2.kcm` | A small KEY2-like map whose Alt rules have no `lalt`. | `8721a519…f4a6` |
+| `touch-swipes-1finger.getevent` | `getevent -lt` of the keyboard surface (`touch_keypad`), recorded on a KEY2 for this project: three one-finger swipes. | `afb08918…d021` |
+| `touch-2-and-3-fingers.getevent` | The same kind of recording: a two-finger swipe up, then three fingers landing 0, 42 and 122 ms apart. | `b128fe9b…51d8` |
 
 ## What follows the device and what does not
 

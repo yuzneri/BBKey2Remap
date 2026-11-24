@@ -5,4 +5,4 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=${1:-$HERE/gesturetool}
 ${CC:-cc} -std=c11 -D_POSIX_C_SOURCE=200809L -O1 -Wall -Wextra -Werror \
-    -o "$OUT" "$HERE/gesturetool.c" "$HERE/config.c" -lm
+    -o "$OUT" "$HERE/gesturetool.c" "$HERE/config.c" "$HERE/gesture.c" -lm
