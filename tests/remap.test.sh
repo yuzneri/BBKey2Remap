@@ -12,6 +12,9 @@ cp "$FIXTURES/key2-base.kcm" "$DST"
 cp "$FIXTURES/key2-base.kl" "$MOD/base.kl"
 DST_KL="$MOD/system/vendor/usr/keylayout/stmpe.kl"
 DST_TP="$MOD/system/etc/excluded-input-devices.xml"
+DST_TG_CONF="$MOD/touchgestured.conf"
+DST_TG_KL="$MOD/system/usr/keylayout/key2remap_touch_keys.kl"
+DST_TG_IDC="$MOD/system/usr/idc/key2remap_touch_pad.idc"
 export KEY2REMAP_ROOT="$DEV" PATH="$DEV/bin:$PATH"
 : "${KLTOOL:?run tests through tests/run.sh}"
 
@@ -23,14 +26,17 @@ refused() {
     cp "$DST" "$WORK/before"
     rm -f "$WORK/before.kl"; [ ! -e "$DST_KL" ] || cp "$DST_KL" "$WORK/before.kl"
     rm -f "$WORK/before.tp"; [ ! -e "$DST_TP" ] || cp "$DST_TP" "$WORK/before.tp"
+    rm -f "$WORK/before.tg"; [ ! -e "$DST_TG_CONF" ] || cp "$DST_TG_CONF" "$WORK/before.tg"
     "$@" > "$WORK/out" 2>&1
     status=$?
     [ "$status" -eq 1 ] && grep -qF "$message" "$WORK/out" || { echo "exit $status"; cat "$WORK/out"; return 1; }
     cmp "$DST" "$WORK/before" || return 1
     if [ -e "$WORK/before.kl" ]; then cmp "$DST_KL" "$WORK/before.kl" || return 1; else [ ! -e "$DST_KL" ] || { echo 'key layout appeared'; return 1; }; fi
     if [ -e "$WORK/before.tp" ]; then cmp "$DST_TP" "$WORK/before.tp" || return 1; else [ ! -e "$DST_TP" ] || { echo 'excluded device list appeared'; return 1; }; fi
+    if [ -e "$WORK/before.tg" ]; then cmp "$DST_TG_CONF" "$WORK/before.tg" || return 1; else [ ! -e "$DST_TG_CONF" ] || { echo 'gesture settings appeared'; return 1; }; fi
     [ ! -e "$MOD/.save.lock" ] && [ ! -L "$MOD/.save.lock" ] || { echo 'lock left behind'; return 1; }
-    ! ls "$MOD"/.stmpe.kcm.* "$MOD"/.config.* "$MOD"/.excluded.xml.* >/dev/null 2>&1 || { echo 'temporary files left'; return 1; }
+    ! ls "$MOD"/.stmpe.kcm.* "$MOD"/.config.* "$MOD"/.excluded.xml.* "$MOD"/.touchgestured.conf.* "$MOD"/.touch.* \
+        >/dev/null 2>&1 || { echo 'temporary files left'; return 1; }
 }
 
 save_writes_checked_map() {
@@ -253,6 +259,77 @@ status_reports_touch_problems() {
         grep -qx 'tp_conflict_module=other' "$WORK/status"
 }
 check 'status reports a foreign excluded device list, a conflicting module and a touch surface still in use' status_reports_touch_problems
+
+# Gesture mode (PR4): the settings for touchgestured, the gesture keyboard's key layout and the
+# passthrough touchpad's IDC.
+GESTURES='tp:mode=gesture tp:step_mm=2.5 tp:1_swipe_left=DPAD_LEFT+shift tp:2_tap=ENTER tp:3_pass=on'
+save_gestures() {
+    rm -f "$DEV/chcon.log"
+    set -f; out=$(remap save sym:H=R_DPAD_LEFT $GESTURES) || { echo "$out"; set +f; return 1; }; set +f
+    grep -qx '<!-- KEY2_TP mode=gesture -->' "$DST_TP" && [ "$(excluded_names "$DST_TP")" = touch_keypad ] &&
+        grep -qx 'step_mm 2.5' "$DST_TG_CONF" && grep -qx 'bind 1 swipe left key 514 shift' "$DST_TG_CONF" &&
+        grep -qx 'bind 2 tap key 540' "$DST_TG_CONF" && grep -qx 'pass 3' "$DST_TG_CONF" &&
+        grep -qx 'mod 42 shift' "$DST_TG_CONF" && grep -qx 'mod 54 shift' "$DST_TG_CONF" &&
+        grep -qx 'mod 56 alt' "$DST_TG_CONF" && grep -qx 'mod 110 ctrl' "$DST_TG_CONF" &&
+        "$GESTURETOOL" check "$DST_TG_CONF" >/dev/null && [ "$(stat -c %a "$DST_TG_CONF")" = 600 ] &&
+        "$KLTOOL" check "$DST_TG_KL" >/dev/null && grep -qx 'key 514 DPAD_LEFT' "$DST_TG_KL" &&
+        grep -qx 'key 540 ENTER' "$DST_TG_KL" && grep -qx 'key 42 SHIFT_LEFT' "$DST_TG_KL" &&
+        grep -qx 'touch.deviceType = touchPad' "$DST_TG_IDC" &&
+        [ "$(stat -c %a "$DST_TG_KL")" = 644 ] && [ "$(stat -c %a "$DST_TG_IDC")" = 644 ] &&
+        grep -q 'u:object_r:system_file:s0 .*/.touch.kl.[0-9]*' "$DEV/chcon.log" &&
+        grep -q 'u:object_r:system_file:s0 .*/.touch.idc.[0-9]*' "$DEV/chcon.log" &&
+        [ "$(remap read | sort | tr '\n' ' ')" = "$(printf '%s\n' sym:H=R_DPAD_LEFT $GESTURES | sort | tr '\n' ' ')" ]
+}
+check 'save in gesture mode writes the daemon settings, the gesture key layout and the touchpad IDC, readable back' save_gestures
+
+gesture_modifiers_follow_key_layout_edits() {
+    remap save kl:110=ALT_LEFT tp:1_tap=ENTER >/dev/null && grep -qx 'mod 110 alt' "$DST_TG_CONF" &&
+        ! grep -q '^mod 110 ctrl' "$DST_TG_CONF"
+}
+check 'the physical modifiers in the gesture settings follow the key layout being saved' gesture_modifiers_follow_key_layout_edits
+
+gestures_kept_in_off_mode() {
+    remap save tp:mode=off tp:1_tap=ENTER >/dev/null &&
+        grep -qx '<!-- KEY2_TP mode=off -->' "$DST_TP" && grep -qx 'bind 1 tap key 524' "$DST_TG_CONF" &&
+        [ ! -e "$DST_TG_KL" ] && [ ! -e "$DST_TG_IDC" ] && [ ! -e "$MOD/system/usr" ] &&
+        [ "$(remap read | sort | tr '\n' ' ')" = 'tp:1_tap=ENTER tp:mode=off ' ]
+}
+check 'gesture settings are kept outside gesture mode, without the key layout and IDC' gestures_kept_in_off_mode
+
+gestures_removed() {
+    remap save sym:H=R_DPAD_LEFT >/dev/null && [ ! -e "$DST_TG_CONF" ] && [ ! -e "$DST_TP" ] && [ ! -e "$MOD/system/usr" ]
+}
+check 'saving without tp: assignments removes every touch file' gestures_removed
+
+gesture_mode_without_gestures() {
+    remap save tp:mode=gesture >/dev/null && [ ! -e "$DST_TG_CONF" ] && [ -e "$DST_TG_KL" ] && "$KLTOOL" check "$DST_TG_KL" >/dev/null &&
+        [ "$(remap read)" = tp:mode=gesture ]
+}
+check 'gesture mode without gestures installs an empty gesture key layout' gesture_mode_without_gestures
+
+set -f; remap save $GESTURES >/dev/null; set +f
+for bad in tp:1_swipe_upleft=DPAD_UP tp:4_tap=ENTER tp:1_tap=enter tp:1_tap=ENTER+ tp:1_tap=ENTER++ctrl tp:1_pass=yes \
+    tp:tap_ms=fast tp:step_mm= tp:1_tap=; do
+    check "a malformed touch setting is refused: $bad" refused 'タッチ操作の設定が正しくありません' remap save "$bad"
+done
+check 'a touch setting given twice is refused' refused 'タッチ操作の設定が重複しています' remap save tp:1_tap=ENTER tp:1_tap=SPACE
+check 'a threshold out of range is refused by the daemon check' refused 'タッチ操作の設定が正しくないため' remap save tp:start_mm=99
+check 'an unknown modifier is refused by the daemon check' refused 'タッチ操作の設定が正しくないため' remap save tp:1_tap=ENTER+super
+check 'passthrough and gestures for one finger count are refused by the daemon check' refused \
+    'タッチ操作の設定が正しくないため' remap save tp:1_pass=on tp:1_tap=ENTER
+check 'an unknown key code is refused by the key layout check' refused 'ジェスチャーに割り当てたキー' remap save tp:1_tap=NO_SUCH_KEY
+check 'a dot is accepted only in touch settings' refused '使えない文字' remap save sym:H=R_DPAD.LEFT
+check 'preview accepts gesture settings and prints only the character map' sh -c 'sh "$1" preview tp:mode=gesture tp:1_tap=ENTER | cmp - "$2"' _ "$MOD/remap.sh" "$MOD/base.kcm"
+
+status_reports_gesture_mode() {
+    set -f; remap save $GESTURES >/dev/null; set +f
+    mkdir -p "$DEV/system/etc" && cp "$DST_TP" "$DEV/system/etc/" && remap status > "$WORK/status"
+    rm -f "$DEV/system/etc/excluded-input-devices.xml"
+    grep -qx 'tp_saved=gesture' "$WORK/status" && grep -qx 'tp_live=gesture' "$WORK/status" &&
+        ! grep -q '^tp_foreign=' "$WORK/status"
+}
+check 'status reports gesture mode as saved and live' status_reports_gesture_mode
+remap save sym:H=R_DPAD_LEFT >/dev/null
 
 reboots_through_power_manager() {
     rm -f "$DEV/svc.log"

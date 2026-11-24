@@ -41,11 +41,13 @@ if [ -d "$PREV" ] && [ "$MODPATH" != "$PREV" ]; then
  P="$PREV/system/vendor/usr/keychars/stmpe.kcm"
  P_KL="$PREV/system/vendor/usr/keylayout/stmpe.kl"
  P_TP="$PREV/system/etc/excluded-input-devices.xml"
+ P_TG="$PREV/touchgestured.conf"
  [ -s "$P" ] || abort "Previous generated map missing."
  # These records use a closed ASCII grammar. remap.sh independently validates every argument.
  CFG=$(sed -n -e 's/^# KEY2_V4 //p' -e 's/^# KEY2_GUI \([^=]*\)=\(.*\)$/sym:\1=R_\2/p' "$P")
  [ ! -s "$P_KL" ] || CFG="$CFG $(sed -n 's/^# KEY2_KL /kl:/p' "$P_KL")"
  [ ! -s "$P_TP" ] || CFG="$CFG $(sed -n 's/^<!-- KEY2_TP \(.*\) -->$/tp:\1/p' "$P_TP")"
+ [ ! -s "$P_TG" ] || CFG="$CFG $(sed -n 's/^# KEY2_TP /tp:/p' "$P_TG")"
  set -f
  if [ -n "$CFG" ]; then
   sh "$MODPATH/remap.sh" save $CFG || abort "Cannot migrate previous settings."

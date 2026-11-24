@@ -409,9 +409,13 @@ function renderEffective() {
 const TOUCH_MODES = [
   { id: 'rom', label: 'ROMの標準', hint: 'キーボードの表面をなぞったときの動き（スクロールなど）は、ROMの標準のままです。' },
   { id: 'off', label: 'オフ', hint: 'キーボードの表面のタッチを使いません。キーを押す操作には影響しません。' },
+  { id: 'gesture', label: '独自ジェスチャー', hint: 'なぞる、払う、軽く叩く操作に、割り当てたキーを送ります。' },
 ];
 
 function touchLabel(v) { return TOUCH_MODES.find((m) => m.id === (v || 'rom')).label; }
+
+/** The value of a touch setting as shown in the change list and the save summary; v may be undefined. */
+function touchText(id, v) { return id === 'tp:mode' ? touchLabel(v) : v || 'なし'; }
 
 /** Mode buttons; "off" cannot be chosen while another excluded device list is in the way. */
 function renderTouch() {
@@ -420,11 +424,11 @@ function renderTouch() {
     const b = button(m.label, () => setTouchMode(m.id), 'tab' + (m.id === mode ? ' active' : ''));
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(m.id === mode));
-    b.disabled = m.id === 'off' && mode !== 'off' && touchBlockers.length > 0;
+    b.disabled = m.id !== 'rom' && m.id !== mode && touchBlockers.length > 0;
     return b;
   }));
   $('touchHint').textContent = TOUCH_MODES.find((m) => m.id === mode).hint +
-    (touchBlockers.length ? `${touchBlockers.join('、')}があるため、オフにできません。` : '');
+    (touchBlockers.length ? `${touchBlockers.join('、')}があるため、切り替えられません。` : '');
 }
 
 function setTouchMode(id) {
@@ -462,10 +466,14 @@ function renderChanges() {
           el('td', {}, remove));
       }
       if (l === 'tp') {
-        const remove = button('✕', (e) => { e.stopPropagation(); delete map[id]; changed('キーボードのタッチ操作をROMの標準に戻しました。'); }, 'remove');
+        const mode = id === 'tp:mode';
+        const remove = button('✕', (e) => {
+          e.stopPropagation(); delete map[id];
+          changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${key}をリセットしました。`);
+        }, 'remove');
         remove.title = 'リセット';
         return el('tr', { onclick: () => $('touch').scrollIntoView() }, el('td', { textContent: 'タッチ操作' }),
-          el('td', { textContent: '—' }), el('td', { textContent: touchLabel(map[id]) }), el('td', {}, remove));
+          el('td', { textContent: mode ? '—' : key }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
       }
       const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
       remove.title = 'リセット';
@@ -615,7 +623,7 @@ $('save').onclick = async () => {
     const lines = diff.map((d) => {
       const [l, key] = d.id.split(':');
       if (l === 'kl') return `${modName(key)}の割り当て：${KCM.roleName(d.from || klBase[key])} → ${KCM.roleName(d.to || klBase[key])}`;
-      if (l === 'tp') return `キーボードのタッチ操作：${touchLabel(d.from)} → ${touchLabel(d.to)}`;
+      if (l === 'tp') return `キーボードのタッチ操作${key === 'mode' ? '' : `（${key}）`}：${touchText(d.id, d.from)} → ${touchText(d.id, d.to)}`;
       const plain = (v) => valueText(v).replace(/^→ /, '');
       return `${layerName(l)} + ${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
     });

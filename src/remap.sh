@@ -9,8 +9,9 @@
 #   remap.sh reboot               reboot the device so that saved maps take effect
 # ASSIGN is MODIFIERS:KEY=VALUE for the character map, e.g. sym:H=R_DPAD_LEFT (validated again
 # by patch.awk), or kl:SCANCODE=KEYCODE for a modifier key's role in the key layout, e.g.
-# kl:110=CTRL_LEFT (validated again by klpatch.awk), or tp:mode=off to turn the keyboard's touch
-# surface off.
+# kl:110=CTRL_LEFT (validated again by klpatch.awk), or tp:ID=VALUE for the keyboard's touch
+# surface: tp:mode=off|gesture, a threshold such as tp:step_mm=3, a gesture's key such as
+# tp:1_swipe_left=DPAD_LEFT+shift, or tp:3_pass=on (checked again by touchgestured check).
 set -eu
 case $0 in */*) dir=${0%/*} ;; *) dir=. ;; esac
 BASE=$(cd "$dir" && pwd -P)
@@ -31,7 +32,13 @@ LOCK="$BASE/.save.lock"
 TP_DEVICE=touch_keypad
 DST_TP="$BASE/system/etc/excluded-input-devices.xml"
 LIVE_TP="$R/system/etc/excluded-input-devices.xml"
-TP_MARK='<!-- KEY2_TP mode=off -->'
+TP_MARK_RE='<!-- KEY2_TP mode=(off|gesture) -->'
+# Gesture mode: touchgestured reads the surface and sends keys through a virtual keyboard, whose key
+# layout and the passthrough touchpad's IDC are found by device name.
+TG="$BASE/bin/touchgestured"
+DST_TG_CONF="$BASE/touchgestured.conf"
+DST_TG_KL="$BASE/system/usr/keylayout/key2remap_touch_keys.kl"
+DST_TG_IDC="$BASE/system/usr/idc/key2remap_touch_pad.idc"
 
 fail() { echo "$*" >&2; exit 1; }
 runawk() { if [ -x "$BB" ]; then LC_ALL=C "$BB" awk "$@"; else LC_ALL=C awk "$@"; fi; }
@@ -60,29 +67,64 @@ generate_kl() {
         fail '生成したキー配置がAndroidの文法検査に通らなかったため、保存しませんでした。'
 }
 
-# write_configs KCM_CONFIG KL_CONFIG ASSIGN...: the generators' config files, kl: assignments to
-# the second. Only a closed ASCII alphabet passes. Sets KL_COUNT and TP_MODE (rom or off).
+# write_configs KCM_CONFIG KL_CONFIG TP_CONFIG ASSIGN...: the generators' config files, kl:
+# assignments to the second and tp: ones other than tp:mode to the third, without "tp:". Only a
+# closed ASCII alphabet passes, with "." added for tp: thresholds. Sets KL_COUNT, TP_COUNT and
+# TP_MODE (rom, off or gesture).
 write_configs() {
-    kcm=$1 kl=$2; shift 2
+    kcm=$1 kl=$2 tp=$3; shift 3
     [ "$#" -le 1500 ] || fail '割り当ては1500件までです。'
     printf '# config\n' > "$kcm"
     printf '# config\n' > "$kl"
-    KL_COUNT=0 TP_MODE=rom
+    : > "$tp"
+    KL_COUNT=0 TP_COUNT=0 TP_MODE=rom
     for item in "$@"; do
-        case "$item" in *[!A-Za-z0-9_+:=]*|'') fail '割り当てに使えない文字が含まれています。';; esac
+        case "$item" in
+            tp:*[!A-Za-z0-9_+:=.]*) fail '割り当てに使えない文字が含まれています。' ;;
+            tp:*) ;;
+            *[!A-Za-z0-9_+:=]*|'') fail '割り当てに使えない文字が含まれています。' ;;
+        esac
         case "$item" in
             kl:*) printf '%s\n' "$item" >> "$kl"; KL_COUNT=$((KL_COUNT + 1)) ;;
-            tp:mode=off) [ "$TP_MODE" = rom ] || fail 'タッチ操作の設定が重複しています。'; TP_MODE=off ;;
-            tp:*) fail 'タッチ操作の設定が正しくありません。' ;;
+            tp:mode=off|tp:mode=gesture)
+                [ "$TP_MODE" = rom ] || fail 'タッチ操作の設定が重複しています。'; TP_MODE=${item#tp:mode=} ;;
+            tp:*) check_touch "${item#tp:}" "$tp"; printf '%s\n' "${item#tp:}" >> "$tp"; TP_COUNT=$((TP_COUNT + 1)) ;;
             *) printf '%s\n' "$item" >> "$kcm" ;;
         esac
     done
 }
 
+# check_touch ID=VALUE TP_CONFIG: the form of one tp: assignment and that its ID is not yet in
+# TP_CONFIG. Ranges, modifier names and key code labels are checked on the generated files.
+check_touch() {
+    id=${1%%=*} value=${1#*=}
+    case "$id" in
+        start_mm|step_mm|flick_mm_s|tap_ms|hold_ms|gather_ms|after_key_ms)
+            case "$value" in ''|*[!0-9.]*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+        [123]_swipe_up|[123]_swipe_down|[123]_swipe_left|[123]_swipe_right|[123]_tap|\
+        [123]_flick_up|[123]_flick_down|[123]_flick_left|[123]_flick_right|\
+        [123]_flick_upleft|[123]_flick_upright|[123]_flick_downleft|[123]_flick_downright)
+            case "$value" in [A-Z0-9]*) ;; *) fail 'タッチ操作の設定が正しくありません。' ;; esac
+            case "$value" in *[!A-Za-z0-9_+]*|*+|*++*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+        [123]_pass) [ "$value" = on ] || fail 'タッチ操作の設定が正しくありません。' ;;
+        *) fail 'タッチ操作の設定が正しくありません。' ;;
+    esac
+    ! grep -q "^$id=" "$2" || fail 'タッチ操作の設定が重複しています。'
+}
+
+# generate_touch TP_CONFIG STMPE_KL CONF_OUT KL_OUT: touchgestured's settings and the gesture
+# keyboard's key layout, each checked by the program that reads it (or Android's KL grammar).
+generate_touch() {
+    runawk -v kl="$4" -f "$BASE/touch.awk" "$2" "$1" > "$3" || fail 'タッチ操作の設定を生成できなかったため、保存しませんでした。'
+    "$TG" check "$3" >&2 || fail 'タッチ操作の設定が正しくないため、保存しませんでした。'
+    runawk -f "$BASE/kllint.awk" "$BASE/keycodes.txt" "$4" >&2 ||
+        fail 'ジェスチャーに割り当てたキーがAndroidの文法検査に通らなかったため、保存しませんでした。'
+}
+
 # tp_blockers: why this module's excluded-input-devices.xml would not be the one in effect, one
 # "KEY=VALUE" line each: a live file the module did not write, or another module adding one.
 tp_blockers() {
-    if [ -e "$LIVE_TP" ] && ! grep -qxF "$TP_MARK" "$LIVE_TP"; then echo "tp_foreign=/system/etc/excluded-input-devices.xml"; fi
+    if [ -e "$LIVE_TP" ] && ! grep -qxE "$TP_MARK_RE" "$LIVE_TP"; then echo "tp_foreign=/system/etc/excluded-input-devices.xml"; fi
     for m in "$R"/data/adb/modules/*; do
         [ -d "$m" ] && [ "${m##*/}" != "$MODID" ] && [ ! -e "$m/disable" ] || continue
         [ -e "$m/system/etc/excluded-input-devices.xml" ] && echo "tp_conflict_module=${m##*/}"
@@ -90,11 +132,15 @@ tp_blockers() {
     return 0
 }
 
-# generate_tp OUT: the excluded device list that turns the touch surface off.
+# generate_tp MODE OUT: the excluded device list that takes the touch surface from Android, marked
+# with MODE (off or gesture).
 generate_tp() {
-    printf '<?xml version="1.0" encoding="utf-8"?>\n%s\n<devices>\n    <device name="%s"/>\n</devices>\n' \
-        "$TP_MARK" "$TP_DEVICE" > "$1"
+    printf '<?xml version="1.0" encoding="utf-8"?>\n<!-- KEY2_TP mode=%s -->\n<devices>\n    <device name="%s"/>\n</devices>\n' \
+        "$1" "$TP_DEVICE" > "$2"
 }
+
+# tp_mode FILE: the mode an excluded device list of this module is marked with (empty if none).
+tp_mode() { [ ! -e "$1" ] || sed -nE 's/^<!-- KEY2_TP mode=(off|gesture) -->$/\1/p' "$1" | head -n 1; }
 
 # The lock is a symlink whose target is the owner's PID, created atomically by ln -s. A lock whose
 # owner is gone (WebUI X may kill its shell in the background) is taken over instead of blocking
@@ -129,7 +175,7 @@ copy_label() {
 # and Magisk mounts it with the module file's own label, so give it the one /system/etc files have.
 label_new_system_file() {
     chcon u:object_r:system_file:s0 "$1" 2>/dev/null ||
-        echo "WARNING: ${1##*/}のSELinuxラベルを付けられませんでした。再起動後、診断でタッチ操作がオフになったか確かめてください。"
+        echo "WARNING: ${1##*/}のSELinuxラベルを付けられませんでした。再起動後、診断でタッチ操作の設定が効いているか確かめてください。"
 }
 
 # roles PREFIX FILE: "PREFIX=SCAN:KEYCODE" for each physical modifier key mapped in FILE.
@@ -175,10 +221,9 @@ status() {
     if [ -s "$BASE/base.kl" ]; then echo kl_editable=yes; else echo kl_editable=no; fi
     roles kl_base "$BASE/base.kl"
     roles kl_live "$LIVE_KL"
-    if [ -s "$DST_TP" ]; then echo tp_saved=off; else echo tp_saved=rom; fi
-    if [ ! -e "$LIVE_TP" ]; then echo tp_live=rom
-    elif grep -qxF "$TP_MARK" "$LIVE_TP"; then echo tp_live=off
-    else echo tp_live=foreign; fi
+    saved=$(tp_mode "$DST_TP"); echo "tp_saved=${saved:-rom}"
+    live=$(tp_mode "$LIVE_TP")
+    if [ -n "$live" ]; then echo "tp_live=$live"; elif [ -e "$LIVE_TP" ]; then echo tp_live=foreign; else echo tp_live=rom; fi
     tp_blockers
     for f in disable update remove; do [ -e "$BASE/$f" ] && echo "flag=$f"; done
     return 0
@@ -199,6 +244,7 @@ case "$cmd" in
         sed -n 's/^# KEY2_V4 //p' "$DST"
         [ ! -s "$DST_KL" ] || sed -n 's/^# KEY2_KL /kl:/p' "$DST_KL"
         [ ! -s "$DST_TP" ] || sed -n 's/^<!-- KEY2_TP \(.*\) -->$/tp:\1/p' "$DST_TP"
+        [ ! -s "$DST_TG_CONF" ] || sed -n 's/^# KEY2_TP /tp:/p' "$DST_TG_CONF"
         exit 0 ;;
     original) cat "$BASE/base.kcm"; exit 0 ;;
 esac
@@ -209,10 +255,14 @@ TMP_KL="$BASE/.stmpe.kl.$$"
 CFG="$BASE/.config.$$"
 CFG_KL="$BASE/.config.kl.$$"
 TMP_TP="$BASE/.excluded.xml.$$"
+CFG_TP="$BASE/.config.tp.$$"
+TMP_TG_CONF="$BASE/.touchgestured.conf.$$"
+TMP_TG_KL="$BASE/.touch.kl.$$"
+TMP_TG_IDC="$BASE/.touch.idc.$$"
 if [ "$cmd" = preview ] || [ "$cmd" = verify ]; then
-    trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL"' EXIT
+    trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL" "$CFG_TP"' EXIT
     trap 'exit 1' HUP INT TERM
-    write_configs "$CFG" "$CFG_KL" "$@"
+    write_configs "$CFG" "$CFG_KL" "$CFG_TP" "$@"
     generate "$CFG" "$TMP"
     # verify also checks the original key layout, which an empty config reproduces.
     if [ "$KL_COUNT" -gt 0 ] || { [ "$cmd" = verify ] && [ -s "$BASE/base.kl" ]; }; then
@@ -227,9 +277,9 @@ fi
 [ -e "$BASE/update" ] && fail 'モジュールの更新が再起動待ちです。再起動してから編集してください。'
 [ -e "$BASE/remove" ] && fail 'モジュールの削除が再起動待ちです。再起動してから編集してください。'
 acquire_lock
-trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL" "$TMP_TP"; if [ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi' EXIT
+trap 'rm -f "$TMP" "$TMP_KL" "$CFG" "$CFG_KL" "$TMP_TP" "$CFG_TP" "$TMP_TG_CONF" "$TMP_TG_KL" "$TMP_TG_IDC"; if [ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ]; then rm -f "$LOCK"; fi' EXIT
 trap 'exit 1' HUP INT TERM
-write_configs "$CFG" "$CFG_KL" "$@"
+write_configs "$CFG" "$CFG_KL" "$CFG_TP" "$@"
 generate "$CFG" "$TMP"
 chmod 0644 "$TMP"
 copy_label "$LIVE" "$TMP"
@@ -239,12 +289,25 @@ if [ "$KL_COUNT" -gt 0 ]; then
     chmod 0644 "$TMP_KL"
     copy_label "$LIVE_KL" "$TMP_KL"
 fi
-if [ "$TP_MODE" = off ]; then
+if [ "$TP_MODE" != rom ]; then
     blockers=$(tp_blockers | sed 's/^[^=]*=//' | tr '\n' ' ')
-    [ -z "$blockers" ] || fail "ほかの除外デバイス一覧（${blockers% }）があるため、タッチ操作をオフにできません。"
-    generate_tp "$TMP_TP"
+    [ -z "$blockers" ] || fail "ほかの除外デバイス一覧（${blockers% }）があるため、タッチ操作を切り替えられません。"
+    generate_tp "$TP_MODE" "$TMP_TP"
     chmod 0644 "$TMP_TP"
     label_new_system_file "$TMP_TP"
+fi
+# The gesture settings are kept whatever the mode, so switching back to gestures restores them.
+if [ "$TP_COUNT" -gt 0 ]; then
+    if [ "$KL_COUNT" -gt 0 ]; then stmpe_kl=$TMP_KL; else stmpe_kl=$BASE/base.kl; fi
+    generate_touch "$CFG_TP" "$stmpe_kl" "$TMP_TG_CONF" "$TMP_TG_KL"
+    chmod 0600 "$TMP_TG_CONF"
+fi
+if [ "$TP_MODE" = gesture ]; then
+    [ "$TP_COUNT" -gt 0 ] || printf '# Generated by remap.sh: no gesture assigned.\n' > "$TMP_TG_KL"
+    printf 'touch.deviceType = touchPad\ntouch.orientationAware = 1\n' > "$TMP_TG_IDC"
+    chmod 0644 "$TMP_TG_KL" "$TMP_TG_IDC"
+    label_new_system_file "$TMP_TG_KL"
+    label_new_system_file "$TMP_TG_IDC"
 fi
 # The renames stay inside the module directory: the live bind mounts keep the old inodes until
 # the next boot. sync before them so a power loss cannot leave a truncated file behind the name.
@@ -258,12 +321,21 @@ else
     rm -f "$DST_KL"
     rmdir "${DST_KL%/*}" 2>/dev/null || :
 fi
-if [ "$TP_MODE" = off ]; then
+if [ "$TP_MODE" != rom ]; then
     [ -d "${DST_TP%/*}" ] || mkdir -m 0755 "${DST_TP%/*}"
     mv -f "$TMP_TP" "$DST_TP"
 else
     rm -f "$DST_TP"
     rmdir "${DST_TP%/*}" 2>/dev/null || :
+fi
+if [ "$TP_COUNT" -gt 0 ]; then mv -f "$TMP_TG_CONF" "$DST_TG_CONF"; else rm -f "$DST_TG_CONF"; fi
+if [ "$TP_MODE" = gesture ]; then
+    for d in "$BASE/system/usr" "${DST_TG_KL%/*}" "${DST_TG_IDC%/*}"; do [ -d "$d" ] || mkdir -m 0755 "$d"; done
+    mv -f "$TMP_TG_KL" "$DST_TG_KL"
+    mv -f "$TMP_TG_IDC" "$DST_TG_IDC"
+else
+    rm -f "$DST_TG_KL" "$DST_TG_IDC"
+    rmdir "${DST_TG_KL%/*}" "${DST_TG_IDC%/*}" "$BASE/system/usr" 2>/dev/null || :
 fi
 sync
 echo OK

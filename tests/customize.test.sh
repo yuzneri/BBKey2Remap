@@ -120,4 +120,18 @@ update_keeps_touch_off() {
 }
 fresh_device; check 'an update keeps the touch surface turned off' update_keeps_touch_off
 
+update_keeps_gestures() {
+    module_files "$PREV"
+    mkdir -p "$PREV/system/vendor/usr/keychars"
+    cp "$FIXTURES/key2-base.kcm" "$PREV/base.kcm"
+    cp "$FIXTURES/key2-base.kcm" "$PREV/system/vendor/usr/keychars/stmpe.kcm"
+    cp "$FIXTURES/key2-base.kl" "$PREV/base.kl"
+    sh "$PREV/remap.sh" save tp:mode=gesture tp:1_swipe_left=DPAD_LEFT+shift tp:3_pass=on >/dev/null || return 1
+    mkdir -p "$DEV/system/etc" && cp "$PREV/system/etc/excluded-input-devices.xml" "$DEV/system/etc/"
+    installed_ok && cmp "$NEW/touchgestured.conf" "$PREV/touchgestured.conf" &&
+        cmp "$NEW/system/usr/keylayout/key2remap_touch_keys.kl" "$PREV/system/usr/keylayout/key2remap_touch_keys.kl" &&
+        [ "$(sh "$NEW/remap.sh" read | sort | tr '\n' ' ')" = 'tp:1_swipe_left=DPAD_LEFT+shift tp:3_pass=on tp:mode=gesture ' ]
+}
+fresh_device; check 'an update keeps the gesture mode and its settings' update_keeps_gestures
+
 finish

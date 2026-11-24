@@ -106,8 +106,24 @@
     return !!m && own(PHYSICAL, m[1]) && typeof v === 'string' && (ROLE_MODIFIERS.includes(v) || own(ACTIONS, v));
   }
 
-  /** Whether ID and VALUE are a touch surface setting; "tp:mode=off" is the only one so far. */
-  function validTouch(id, v) { return id === 'tp:mode' && v === 'off'; }
+  const TOUCH_THRESHOLDS = ['start_mm', 'step_mm', 'flick_mm_s', 'tap_ms', 'hold_ms', 'gather_ms', 'after_key_ms'];
+  const TOUCH_GESTURE = /^tp:[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right|upleft|upright|downleft|downright)|tap)$/;
+  const TOUCH_MODIFIERS = ['ctrl', 'shift', 'alt', 'meta'];
+
+  /**
+   * Whether ID and VALUE are a touch surface setting: tp:mode (off or gesture), a threshold, a
+   * gesture's key (KEYCODE[+MODIFIER...]) or a passthrough finger count. remap.sh checks ranges and
+   * key code labels again on the files it generates.
+   */
+  function validTouch(id, v) {
+    if (typeof v !== 'string') return false;
+    if (id === 'tp:mode') return v === 'off' || v === 'gesture';
+    if (TOUCH_THRESHOLDS.includes(id.slice(3))) return /^[0-9]+(\.[0-9]+)?$/.test(v);
+    if (/^tp:[123]_pass$/.test(id)) return v === 'on';
+    if (!TOUCH_GESTURE.test(id)) return false;
+    const [code, ...mods] = v.split('+');
+    return /^[A-Z0-9][A-Z0-9_]*$/.test(code) && mods.every((m, i) => TOUCH_MODIFIERS.includes(m) && mods.indexOf(m) === i);
+  }
 
   /** Whether ID ("layer:KEY") names a canonical layer and a KEY2 key. */
   function validId(id) {
@@ -397,8 +413,8 @@
 
   /**
    * remap.sh status output as {kcmLoaded, shadowedBy, conflicts, applied, flags, modifiers, touch}.
-   * Touch fields: tpSaved and tpLive are "rom" or "off" (tpLive also "foreign"); tpExcluded is
-   * "yes", "no", or "" when dumpsys gave no excluded device list.
+   * Touch fields: tpSaved and tpLive are "rom", "off" or "gesture" (tpLive also "foreign");
+   * tpExcluded is "yes", "no", or "" when dumpsys gave no excluded device list.
    */
   function parseStatus(text) {
     const st = { kcmLoaded: '', klLoaded: '', shadowedBy: [], conflicts: [], applied: false, klApplied: false,
@@ -448,19 +464,22 @@
     if (st.flags.includes('disable')) out.push({ warn: true, text: 'モジュールは無効です。再起動後は導入前の状態に戻ります。' });
     for (const p of st.tpForeign) out.push({ warn: true, text: `${p}があるため、キーボードのタッチ操作をオフにできません。` });
     for (const m of st.tpConflicts) out.push({ warn: true, text: `モジュール${m}も除外デバイス一覧（excluded-input-devices.xml）を追加しているため、キーボードのタッチ操作をオフにできません。` });
-    if (st.tpSaved !== 'off' && st.tpLive !== 'off' && st.tpExcluded === 'yes') {
+    // Both "off" and "gesture" take the surface from Android with the module's excluded device list.
+    const takes = (mode) => mode === 'off' || mode === 'gesture';
+    const modeName = (mode) => (mode === 'off' ? 'オフ' : '独自ジェスチャー');
+    if (!takes(st.tpSaved) && !takes(st.tpLive) && st.tpExcluded === 'yes') {
       out.push({ warn: true, text: 'このモジュール以外の設定で、キーボードのタッチ操作がオフになっています。' });
     }
-    if (st.tpSaved === 'off' && st.tpLive === 'off' && st.tpExcluded === 'no') {
-      out.push({ warn: true, text: 'タッチ操作をオフにする設定は配置されていますが、Androidに使われていません。' });
+    if (takes(st.tpSaved) && st.tpLive === st.tpSaved && st.tpExcluded === 'no') {
+      out.push({ warn: true, text: `タッチ操作を${modeName(st.tpSaved)}にする設定は配置されていますが、Androidに使われていません。` });
     }
     if (st.kcmLoaded && /\/stmpe\.kcm$/.test(st.kcmLoaded)) out.push({ warn: false, text: `Androidは${st.kcmLoaded}を読み込んでいます。` });
     if (st.klLoaded && /\/stmpe\.kl$/.test(st.klLoaded)) out.push({ warn: false, text: `Androidは${st.klLoaded}を読み込んでいます。` });
-    const touchApplied = (st.tpSaved === 'off') === (st.tpLive === 'off');
-    if (st.tpSaved === 'off') {
-      if (!touchApplied) out.push({ warn: false, text: 'キーボードのタッチ操作は再起動後にオフになります。' });
-      else if (st.tpExcluded !== 'no') out.push({ warn: false, text: 'キーボードのタッチ操作はオフです。' });
-    } else if (st.tpLive === 'off') {
+    const touchApplied = takes(st.tpSaved) ? st.tpLive === st.tpSaved : !takes(st.tpLive);
+    if (takes(st.tpSaved)) {
+      if (!touchApplied) out.push({ warn: false, text: `キーボードのタッチ操作は再起動後に${modeName(st.tpSaved)}になります。` });
+      else if (st.tpExcluded !== 'no') out.push({ warn: false, text: `キーボードのタッチ操作は${modeName(st.tpSaved)}です。` });
+    } else if (takes(st.tpLive)) {
       out.push({ warn: false, text: 'キーボードのタッチ操作は再起動後にROMの標準に戻ります。' });
     }
     out.push(st.applied && st.klApplied && touchApplied ? { warn: false, text: '保存した設定は使用中です。' }

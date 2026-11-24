@@ -106,9 +106,15 @@ test('status lines parse into diagnostics', () => {
     ['off', 'foreign', 'no', ['/system/etc/excluded-input-devices.xml'], ['other']]);
 });
 
-test('the touch surface setting accepts only tp:mode=off', () => {
-  assert.deepEqual(KCM.validate({ 'tp:mode': 'off', 'sym:H': 'R_DPAD_LEFT' }), Object.assign(Object.create(null), { 'tp:mode': 'off', 'sym:H': 'R_DPAD_LEFT' }));
-  for (const bad of [{ 'tp:mode': 'on' }, { 'tp:mode': 'rom' }, { 'tp:speed': 'off' }, { 'tp:mode': 'R_TAB' }]) {
+test('touch surface settings: the modes, thresholds, gesture keys and passthrough', () => {
+  const good = { 'tp:mode': 'gesture', 'tp:step_mm': '2.5', 'tp:tap_ms': '200', 'tp:1_swipe_left': 'DPAD_LEFT+shift',
+    'tp:2_flick_upleft': 'MOVE_HOME+ctrl+alt', 'tp:3_tap': 'ENTER', 'tp:2_pass': 'on', 'sym:H': 'R_DPAD_LEFT' };
+  assert.deepEqual(KCM.validate(good), Object.assign(Object.create(null), good));
+  assert.deepEqual(KCM.validate({ 'tp:mode': 'off' }), Object.assign(Object.create(null), { 'tp:mode': 'off' }));
+  for (const bad of [{ 'tp:mode': 'on' }, { 'tp:mode': 'rom' }, { 'tp:speed': 'off' }, { 'tp:mode': 'R_TAB' },
+    { 'tp:step_mm': '2.' }, { 'tp:step_mm': 'fast' }, { 'tp:4_tap': 'ENTER' }, { 'tp:1_swipe_upleft': 'ENTER' },
+    { 'tp:1_tap': 'enter' }, { 'tp:1_tap': 'ENTER+super' }, { 'tp:1_tap': 'ENTER+ctrl+ctrl' }, { 'tp:1_tap': 'ENTER+' },
+    { 'tp:1_pass': 'yes' }, { 'tp:1_tap': 3 }]) {
     assert.throws(() => KCM.validate(bad), JSON.stringify(bad));
   }
 });
@@ -123,6 +129,13 @@ test('diagnostics tell whether the touch surface is off, pending, or blocked', (
   assert.ok(unused.includes('!タッチ操作をオフにする設定は配置されていますが、Androidに使われていません。'), unused.join('\n'));
   assert.ok(unused.every((t) => !t.includes('タッチ操作はオフです') && !t.includes('再起動後にオフ')), 'neither off nor pending');
   assert.ok(text('tp_saved=rom\ntp_live=off\n').includes('キーボードのタッチ操作は再起動後にROMの標準に戻ります。'));
+  const gesture = text('tp_saved=gesture\ntp_live=gesture\ntp_excluded=yes\n');
+  assert.ok(gesture.includes('キーボードのタッチ操作は独自ジェスチャーです。'), gesture.join('\n'));
+  assert.ok(gesture.includes('保存した設定は使用中です。') && gesture.every((t) => !t.startsWith('!')), gesture.join('\n'));
+  assert.ok(text('tp_saved=gesture\ntp_live=off\ntp_excluded=yes\n').includes('キーボードのタッチ操作は再起動後に独自ジェスチャーになります。'));
+  assert.ok(text('tp_saved=gesture\ntp_live=gesture\ntp_excluded=no\n')
+    .includes('!タッチ操作を独自ジェスチャーにする設定は配置されていますが、Androidに使われていません。'));
+  assert.ok(text('tp_saved=rom\ntp_live=gesture\n').includes('キーボードのタッチ操作は再起動後にROMの標準に戻ります。'));
   assert.ok(text('tp_saved=rom\ntp_live=rom\n').every((t) => !t.includes('タッチ')), 'the ROM default needs no line');
   const blocked = KCM.diagnose(KCM.parseStatus(GOOD_STATUS + 'tp_live=foreign\ntp_excluded=yes\n' +
     'tp_foreign=/system/etc/excluded-input-devices.xml\ntp_conflict_module=other\n'));
