@@ -10,7 +10,7 @@
 <body>
 <main>
 <header>
-<small>BLACKBERRY KEY2 · MAGISK · V1.1-DEV2</small>
+<small>BLACKBERRY KEY2 · MAGISK · V1.1-DEV3</small>
 <h1>キーリマップ</h1>
 <p>レイヤー（一緒に押す修飾キー）とキーを選び、パレットから出力を選びます。</p>
 </header>
@@ -47,6 +47,23 @@
 <h2>キーボードのタッチ操作</h2>
 <div id="touchModes" class="tabs" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
 <p id="touchHint" class="hint"></p>
+<div id="gestureEditor" hidden>
+<div id="fingerTabs" class="tabs"></div>
+<label class="check"><input id="passFingers" type="checkbox"><span id="passLabel"></span></label>
+<div id="gestures" class="gestures"></div>
+<div id="gesturePanel" hidden>
+<h3 id="gestureTarget"></h3>
+<div id="gestureMods" class="toolbar"></div>
+<div id="gestureCats" class="tabs"></div>
+<div id="gesturePalette" class="palette"></div>
+<div class="toolbar"><button id="gestureClear" type="button">割り当てを外す</button></div>
+</div>
+<details id="thresholdBox">
+<summary>しきい値（誤動作を減らす）</summary>
+<p class="hint">空欄は既定値です。しきい値だけの変更は、保存するとすぐ効きます。</p>
+<div id="thresholds" class="thresholds"></div>
+</details>
+</div>
 </section>
 <section>
 <h2>変更一覧</h2>

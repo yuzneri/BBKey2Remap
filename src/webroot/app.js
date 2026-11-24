@@ -25,6 +25,10 @@ let klLive = {};
 let klEditable = false;
 // Other excluded device lists that keep this module from turning the touch surface off.
 let touchBlockers = [];
+let touchThresholds = [];
+let touchFingers = '1';
+let touchGesture = null;
+let touchCategory = 'cursor';
 let current = 'base';
 // Character key being edited; null with selectedMod also null until a key is chosen.
 let selected = null;
@@ -413,17 +417,44 @@ const TOUCH_MODES = [
   { id: 'gesture', label: '独自ジェスチャー', hint: 'なぞる、払う、軽く叩く操作に、割り当てたキーを送ります。' },
 ];
 
+const THRESHOLD_LABELS = {
+  start_mm: ['開始距離', 'mm', 'これだけ動くまで、なぞったとみなしません。最初のキーはここで送ります。'],
+  step_mm: ['1回の距離', 'mm', 'なぞり続けるとき、これだけ動くごとにキーを1回送ります。'],
+  flick_mm_s: ['払う速さ', 'mm/秒', '離す直前がこの速さ以上なら、払ったとみなします。'],
+  tap_ms: ['タップの最大時間', 'ms', '触れてから離すまでがこれ以下なら、タップとみなします。'],
+  hold_ms: ['触れてからの待ち時間', 'ms', '触れてからこの時間は、キーを送りません。'],
+  gather_ms: ['指をそろえる時間', 'ms', '最初の指からこの時間内に触れた指を、同じ操作の指として数えます。'],
+  after_key_ms: ['キー入力後の無視時間', 'ms', 'キーを打ってからこの時間内に始まったタッチは無視します。'],
+};
+
 function touchLabel(v) { return TOUCH_MODES.find((m) => m.id === (v || 'rom')).label; }
 
-/** The value of a touch setting as shown in the change list and the save summary; v may be undefined. */
-function touchText(id, v) { return id === 'tp:mode' ? touchLabel(v) : v || 'なし'; }
+/** The name of touch setting ID in the change list and the save summary. */
+function touchName(id) {
+  const name = id.slice(3);
+  if (id === 'tp:mode') return 'モード';
+  if (own(THRESHOLD_LABELS, name)) return THRESHOLD_LABELS[name][0];
+  if (/^[123]_pass$/.test(name)) return name[0] + '本指';
+  return KCM.gestureName(id);
+}
 
-/** Mode buttons; "off" cannot be chosen while another excluded device list is in the way. */
+/** The value of touch setting ID as shown in the change list and the save summary; v may be undefined. */
+function touchText(id, v) {
+  const name = id.slice(3);
+  if (id === 'tp:mode') return touchLabel(v);
+  if (v === undefined) return 'なし';
+  if (own(THRESHOLD_LABELS, name)) return v + ' ' + THRESHOLD_LABELS[name][1];
+  if (/^[123]_pass$/.test(name)) return 'ROMの標準の動作に渡す';
+  return KCM.touchKeyText(v);
+}
+
+/** The gesture assignments of finger count F ("1".."3") in the map, as their IDs. */
+function gestureIds(f) { return KCM.TOUCH_GESTURES.map((g) => `tp:${f}_${g.id}`).filter((id) => own(map, id)); }
+
+/** Mode buttons, and in gesture mode the gesture assignments and the thresholds. */
 function renderTouch() {
   const mode = map['tp:mode'] || 'rom';
-  // Gestures cannot be assigned on this page yet, so their mode is shown only once it is set.
-  const modes = TOUCH_MODES.filter((m) => m.id !== 'gesture' || mode === 'gesture');
-  $('touchModes').replaceChildren(...modes.map((m) => {
+  $('touchModes').replaceChildren(...TOUCH_MODES.map((m) => {
     const b = button(m.label, () => setTouchMode(m.id), 'tab' + (m.id === mode ? ' active' : ''));
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(m.id === mode));
@@ -432,7 +463,131 @@ function renderTouch() {
   }));
   $('touchHint').textContent = TOUCH_MODES.find((m) => m.id === mode).hint +
     (touchBlockers.length ? `${touchBlockers.join('、')}があるため、切り替えられません。` : '');
+  $('gestureEditor').hidden = mode !== 'gesture';
+  if (mode === 'gesture') {
+    renderFingers();
+    renderGesturePanel();
+    renderThresholds();
+  }
 }
+
+function renderFingers() {
+  $('fingerTabs').replaceChildren(...['1', '2', '3'].map((f) => {
+    const n = gestureIds(f).length;
+    const b = button(`${f}本指`, () => { touchFingers = f; touchGesture = null; render(); }, 'tab' + (f === touchFingers ? ' active' : ''));
+    if (own(map, `tp:${f}_pass`)) b.append(el('span', { className: 'badge', textContent: '標準' }));
+    else if (n) b.append(el('span', { className: 'badge', textContent: String(n) }));
+    return b;
+  }));
+  const pass = own(map, `tp:${touchFingers}_pass`);
+  $('passFingers').checked = pass;
+  $('passLabel').textContent = `${touchFingers}本指の操作はROMの標準の動作（スクロールなど）に渡す`;
+  const cell = (g) => {
+    const id = `tp:${touchFingers}_${g.id}`;
+    const b = button('', () => { touchGesture = g.id; render(); },
+      'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
+    // The group heading names the kind, so a button shows only its direction.
+    b.append(el('small', { textContent: KCM.gestureName(id).replace(/^[123]本指で(なぞる|払う)?/, '') }),
+      el('span', { textContent: own(map, id) ? KCM.touchKeyText(map[id]) : '—' }));
+    b.disabled = pass;
+    return b;
+  };
+  const byId = (id) => KCM.TOUCH_GESTURES.find((g) => g.id === id);
+  // Flicks are laid out by their direction around an empty centre.
+  const flicks = ['flick_upleft', 'flick_up', 'flick_upright', 'flick_left', '', 'flick_right', 'flick_downleft', 'flick_down', 'flick_downright']
+    .map((id) => (id ? cell(byId(id)) : el('span')));
+  $('gestures').replaceChildren(
+    el('div', { className: 'glabel', textContent: 'なぞる' }),
+    el('div', { className: 'grow' }, ...KCM.TOUCH_GESTURES.filter((g) => g.kind === 'swipe').map(cell)),
+    el('div', { className: 'glabel', textContent: '払う' }),
+    el('div', { className: 'ggrid' }, ...flicks),
+    el('div', { className: 'glabel', textContent: 'タップ' }),
+    el('div', { className: 'grow' }, cell(byId('tap'))));
+}
+
+/** The key of the selected gesture: palette, modifiers and removal. */
+function renderGesturePanel() {
+  const id = touchGesture && `tp:${touchFingers}_${touchGesture}`;
+  $('gesturePanel').hidden = !id || own(map, `tp:${touchFingers}_pass`);
+  if ($('gesturePanel').hidden) return;
+  const { code, mods } = KCM.parseTouchKey(map[id]);
+  $('gestureTarget').textContent = KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : '割り当てなし');
+  $('gestureMods').replaceChildren(...['ctrl', 'shift', 'alt', 'meta'].map((m) => {
+    const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) });
+    box.onchange = () => setGestureKey(id, code, box.checked ? [...mods, m] : mods.filter((x) => x !== m));
+    return el('label', { className: 'check' }, box, document.createTextNode(m[0].toUpperCase() + m.slice(1)));
+  }));
+  $('gestureCats').replaceChildren(...KCM.PALETTE.map((c) => button(c.label, () => { touchCategory = c.id; render(); },
+    'tab' + (c.id === touchCategory ? ' active' : ''))));
+  const cat = KCM.PALETTE.find((c) => c.id === touchCategory) || KCM.PALETTE[0];
+  $('gesturePalette').replaceChildren(...cat.codes.map((c) => {
+    const b = button(KCM.shortName(c), () => setGestureKey(id, c, mods), 'pal' + (code === c ? ' active' : ''));
+    b.title = ACTIONS[c] || c;
+    return b;
+  }));
+  $('gestureClear').disabled = !own(map, id);
+  $('gestureClear').onclick = () => { delete map[id]; changed(`${KCM.gestureName(id)}の割り当てを外しました。`); };
+}
+
+function setGestureKey(id, code, mods) {
+  map[id] = KCM.formatTouchKey(code, mods);
+  changed(`${KCM.gestureName(id)}を${KCM.touchKeyText(map[id])}にしました。`);
+}
+
+/** The thresholds with touchgestured's defaults as placeholders; an empty field is the default. */
+function renderThresholds() {
+  if (!touchThresholds.length) {
+    $('thresholds').replaceChildren(el('p', { className: 'hint', textContent: 'しきい値の既定値を読み込めませんでした。常駐プログラムがないか、動きません。' }));
+    return;
+  }
+  // Rebuilding the fields would drop the one being typed in, so only values not being edited are refreshed.
+  if ($('thresholds').dataset.built !== 'yes') {
+    $('thresholds').replaceChildren(...touchThresholds.filter((t) => own(THRESHOLD_LABELS, t.name)).map((t) => {
+      const [label, unit, hint] = THRESHOLD_LABELS[t.name];
+      const input = el('input', { type: 'text', inputMode: 'decimal', id: 'th_' + t.name, placeholder: String(t.def), autocomplete: 'off' });
+      input.onchange = () => setThreshold(t, input);
+      return el('label', { className: 'threshold' }, el('span', { textContent: label }),
+        el('span', { className: 'thinput' }, input, document.createTextNode(unit)),
+        el('small', { textContent: `${hint}（既定 ${t.def}、${t.min}〜${t.max}）` }));
+    }));
+    $('thresholds').dataset.built = 'yes';
+  }
+  for (const t of touchThresholds) {
+    const input = $('th_' + t.name);
+    if (input && document.activeElement !== input) input.value = map['tp:' + t.name] || '';
+  }
+}
+
+function setThreshold(t, input) {
+  const v = input.value.trim();
+  const id = 'tp:' + t.name;
+  if (v === '') {
+    if (!own(map, id)) return;
+    delete map[id];
+    changed(`${THRESHOLD_LABELS[t.name][0]}を既定値（${t.def}）に戻しました。`);
+    return;
+  }
+  if (!KCM.validThreshold(t, v)) {
+    input.value = map[id] || '';
+    status(`${THRESHOLD_LABELS[t.name][0]}は${t.min}〜${t.max}の${t.name.endsWith('_ms') ? '整数' : '数'}で入力してください。`);
+    return;
+  }
+  map[id] = v;
+  changed(`${THRESHOLD_LABELS[t.name][0]}を${v} ${THRESHOLD_LABELS[t.name][1]}にしました。`);
+}
+
+$('passFingers').onchange = async () => {
+  const f = touchFingers;
+  const box = $('passFingers');
+  if (!box.checked) { delete map[`tp:${f}_pass`]; changed(`${f}本指の操作を独自ジェスチャーに戻しました。`); return; }
+  const ids = gestureIds(f);
+  // touchgestured cannot both pass a finger count through and recognise its gestures.
+  if (ids.length && !await ask(`${f}本指の割り当て${ids.length}件を外して、ROMの標準の動作に渡しますか？`)) { box.checked = false; return; }
+  ids.forEach((id) => delete map[id]);
+  map[`tp:${f}_pass`] = 'on';
+  touchGesture = null;
+  changed(`${f}本指の操作をROMの標準の動作に渡します。`);
+};
 
 function setTouchMode(id) {
   if (id === (map['tp:mode'] || 'rom')) return;
@@ -472,11 +627,11 @@ function renderChanges() {
         const mode = id === 'tp:mode';
         const remove = button('✕', (e) => {
           e.stopPropagation(); delete map[id];
-          changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${key}をリセットしました。`);
+          changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${touchName(id)}をリセットしました。`);
         }, 'remove');
         remove.title = 'リセット';
         return el('tr', { onclick: () => $('touch').scrollIntoView() }, el('td', { textContent: 'タッチ操作' }),
-          el('td', { textContent: mode ? '—' : key }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
+          el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
       }
       const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
       remove.title = 'リセット';
@@ -530,6 +685,8 @@ async function loadStatus() {
   klLive = st.klLive;
   klEditable = st.klEditable;
   touchBlockers = [...st.tpForeign, ...st.tpConflicts.map((m) => 'モジュール' + m)];
+  touchThresholds = st.tpThresholds;
+  $('thresholds').dataset.built = '';
   renderDiagnostics(st);
 }
 
@@ -626,7 +783,7 @@ $('save').onclick = async () => {
     const lines = diff.map((d) => {
       const [l, key] = d.id.split(':');
       if (l === 'kl') return `${modName(key)}の割り当て：${KCM.roleName(d.from || klBase[key])} → ${KCM.roleName(d.to || klBase[key])}`;
-      if (l === 'tp') return `キーボードのタッチ操作${key === 'mode' ? '' : `（${key}）`}：${touchText(d.id, d.from)} → ${touchText(d.id, d.to)}`;
+      if (l === 'tp') return `キーボードのタッチ操作${key === 'mode' ? '' : `（${touchName(d.id)}）`}：${touchText(d.id, d.from)} → ${touchText(d.id, d.to)}`;
       const plain = (v) => valueText(v).replace(/^→ /, '');
       return `${layerName(l)} + ${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
     });
