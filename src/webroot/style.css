@@ -7,6 +7,12 @@ h2{font-size:18px;margin:8px 0}
 p{line-height:1.55;font-size:14px}
 small{letter-spacing:1.3px;color:#888}
 section{border-top:1px solid var(--line);margin-top:18px;padding-top:8px}
+.view>section:first-child{border-top:0;margin-top:4px}
+.views{display:grid;grid-template-columns:repeat(3,1fr);margin:14px 0 6px;border:1px solid var(--accent);border-radius:10px;overflow:hidden}
+.views button{border:0;border-radius:0;padding:12px 4px;font-weight:600}
+.views button+button{border-left:1px solid var(--accent)}
+.views button[aria-selected=true]{background:var(--accent);color:#fff}
+.views .badge{margin-left:4px}
 fieldset{border:0;margin:0;padding:0;min-width:0}
 fieldset:disabled{opacity:.65}
 button,select,input,textarea{font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:9px}
@@ -16,8 +22,8 @@ button:disabled{opacity:.45}
 .hint{color:gray;font-size:13px}
 #status{padding:12px;border:1px solid var(--line);border-radius:9px;white-space:pre-wrap;font-size:14px}
 #save{width:100%;background:var(--accent);color:#fff;font-weight:bold}
-footer{margin-top:24px}
-footer p{color:#888}
+#save:disabled{background:transparent;color:inherit}
+footer{position:sticky;bottom:0;margin-top:24px;padding:10px 0 12px;background:Canvas;border-top:1px solid var(--line)}
 .check{display:flex;align-items:center;gap:6px;font-size:13px}
 .unavailable{opacity:.5}
 [hidden]{display:none!important}

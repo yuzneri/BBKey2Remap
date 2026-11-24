@@ -16,6 +16,12 @@
 </header>
 <div id="status" role="status">接続中…</div>
 <fieldset id="editor" disabled>
+<nav id="views" class="views" role="tablist" aria-label="設定の種類">
+<button type="button" role="tab" data-view="keys">キー</button>
+<button type="button" role="tab" data-view="touch">タッチ操作</button>
+<button type="button" role="tab" data-view="changes">変更と診断</button>
+</nav>
+<div id="view-keys" class="view" role="tabpanel">
 <section>
 <div id="tabs" class="tabs" role="tablist"></div>
 <details id="advanced">
@@ -25,7 +31,10 @@
 </details>
 <p id="layerHint" class="hint"></p>
 <div id="keyboard" tabindex="-1"></div>
-<div class="toolbar"><button id="pickSource" type="button">キーを押して選ぶ</button></div>
+<div class="toolbar">
+<button id="pickSource" type="button">キーを押して選ぶ</button>
+<button id="resetLayer" type="button">このレイヤーをリセット</button>
+</div>
 </section>
 <section id="panel">
 <h2 id="target"></h2>
@@ -43,6 +52,14 @@
 <div id="effective"></div>
 </details>
 </section>
+<section>
+<h2>キー入力テスト</h2>
+<p class="hint">下の枠を押してからキーを押すと、この画面に届いたキーの情報を表示します。保存した設定を再起動後に確かめる目安です。IMEやほかのアプリでの動きまでは確かめられません。</p>
+<div id="keytest" class="keytest" tabindex="0" role="button">ここを押してからキーを押す</div>
+<pre id="keylog"></pre>
+</section>
+</div>
+<div id="view-touch" class="view" role="tabpanel">
 <section id="touch">
 <h2>キーボードのタッチ操作</h2>
 <div id="touchModes" class="tabs" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
@@ -70,11 +87,13 @@
 </details>
 </div>
 </section>
+</div>
+<div id="view-changes" class="view" role="tabpanel">
 <section>
 <h2>変更一覧</h2>
+<p class="hint">保存後に再起動するか確認します。モジュールを無効化して再起動すると、導入前の状態に戻ります。</p>
 <table id="changes"></table>
 <div class="toolbar">
-<button id="resetLayer" type="button">このレイヤーをリセット</button>
 <button id="resetAll" type="button">すべてリセット</button>
 </div>
 <details>
@@ -91,15 +110,9 @@
 <ul id="diagnostics"></ul>
 <button id="recheck" type="button">再確認</button>
 </section>
-<section>
-<h2>キー入力テスト</h2>
-<p class="hint">下の枠を押してからキーを押すと、この画面に届いたキーの情報を表示します。保存した設定を再起動後に確かめる目安です。IMEやほかのアプリでの動きまでは確かめられません。</p>
-<div id="keytest" class="keytest" tabindex="0" role="button">ここを押してからキーを押す</div>
-<pre id="keylog"></pre>
-</section>
+</div>
 <footer>
 <button id="save" type="button">保存（再起動後に反映）</button>
-<p>保存後に再起動するか確認します。モジュールを無効化して再起動すると、導入前の状態に戻ります。</p>
 </footer>
 </fieldset>
 </main>

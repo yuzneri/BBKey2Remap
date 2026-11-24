@@ -31,6 +31,8 @@ let touchFingers = '1';
 let touchGesture = null;
 let touchCategory = 'cursor';
 let current = 'base';
+/** The view shown: keys, touch or changes. */
+let view = 'keys';
 // Character key being edited; null with selectedMod also null until a key is chosen.
 let selected = null;
 // Scan code of the physical modifier key being edited, or null while a character key is selected.
@@ -720,7 +722,7 @@ function renderChanges() {
       if (l === 'kl') {
         const remove = button('✕', (e) => { e.stopPropagation(); delete map[id]; changed(`${modName(key)}をリセットしました。`); }, 'remove');
         remove.title = 'リセット';
-        return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; render(); } }, el('td', { textContent: '修飾キー' }),
+        return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; showView('keys'); } }, el('td', { textContent: '修飾キー' }),
           el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
           el('td', {}, remove));
       }
@@ -731,19 +733,43 @@ function renderChanges() {
           changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${touchName(id)}をリセットしました。`);
         }, 'remove');
         remove.title = 'リセット';
-        return el('tr', { onclick: () => $('touch').scrollIntoView() }, el('td', { textContent: 'タッチ操作' }),
+        return el('tr', { onclick: () => showView('touch') }, el('td', { textContent: 'タッチ操作' }),
           el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
       }
       const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
       remove.title = 'リセット';
-      return el('tr', { onclick: () => { selected = key; selectedMod = null; setLayer(l); } },
+      return el('tr', { onclick: () => { selected = key; selectedMod = null; view = 'keys'; setLayer(l); window.scrollTo(0, 0); } },
         el('td', { textContent: layerName(l) + (with_.length ? '（' + with_.map(layerName).join('、') + 'も）' : '') }),
         el('td', { textContent: keyName(key) }),
         el('td', { textContent: valueText(map[id]) }), el('td', {}, remove));
     }));
 }
 
+/** The views and the save button, each with the number of unsaved changes it holds. */
+function renderViews() {
+  const diff = KCM.diffAssignments(saved, map);
+  const touch = diff.filter((d) => d.id.startsWith('tp:')).length;
+  const counts = { keys: diff.length - touch, touch, changes: 0 };
+  for (const b of $('views').children) {
+    const v = b.dataset.view;
+    b.setAttribute('aria-selected', String(v === view));
+    b.replaceChildren(b.dataset.label || (b.dataset.label = b.textContent));
+    if (counts[v]) b.append(el('span', { className: 'badge', textContent: String(counts[v]) }));
+    $('view-' + v).hidden = v !== view;
+  }
+  $('save').textContent = diff.length ? `保存（${diff.length}件）` : '保存する変更はありません';
+  $('save').disabled = !diff.length;
+}
+
+function showView(v) {
+  view = v;
+  render();
+  window.scrollTo(0, 0);
+}
+for (const b of $('views').children) b.onclick = () => showView(b.dataset.view);
+
 function render() {
+  renderViews();
   renderTabs();
   renderKeyboard();
   renderPanel();
@@ -895,6 +921,7 @@ $('save').onclick = async () => {
     $('editor').disabled = true;
     const out = await bridge(['save', ...args]);
     saved = Object.assign(Object.create(null), map);
+    render();
     const warnings = out.split('\n').filter((l) => l.startsWith('WARNING:')).map((l) => l.replace(/^WARNING: */, '注意：'));
     status('保存しました。' + (onlyThresholds ? when : '再起動すると反映されます。') + (warnings.length ? '\n' + warnings.join('\n') : ''));
     if (!onlyThresholds && await ask('保存しました。再起動すると反映されます。今すぐ再起動しますか？', '再起動する', 'あとで')) {
@@ -906,6 +933,7 @@ $('save').onclick = async () => {
     status('保存できませんでした：' + e.message);
   } finally {
     $('editor').disabled = false;
+    renderViews();
   }
 };
 $('recheck').onclick = async () => {
