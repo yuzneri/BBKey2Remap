@@ -15,15 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The runner's preinstalled NDK is not the pinned release, so build-native.sh downloads it.
+      # The runner's preinstalled NDK is not the pinned release, so build-native.sh (run by
+      # build-zip.sh) downloads it.
       # The key names that release (NDK_REVISION in tools/build-native.sh).
       - uses: actions/cache@v6
         with:
           path: ~/.cache/android-ndk
           key: android-ndk-30.0.16248370-${{ runner.os }}
-
-      - name: Build touchgestured
-        run: sh tools/build-native.sh
 
       - name: Build ZIP
         id: zip

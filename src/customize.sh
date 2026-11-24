@@ -35,6 +35,7 @@ sh "$MODPATH/remap.sh" verify > /dev/null || abort "The original keymap or key l
 set_perm "$MODPATH/base.kcm" 0 0 0600 || abort "Backup permissions failed"
 set_perm "$MODPATH/base.kl" 0 0 0600 || abort "Key layout backup permissions failed"
 set_perm "$MODPATH/remap.sh" 0 0 0755 || abort "Script permissions failed"
+set_perm "$MODPATH/bin/touchgestured" 0 0 0755 || abort "Gesture daemon permissions failed"
 set_perm "$MODPATH/system/vendor/usr/keychars/stmpe.kcm" 0 0 0644 u:object_r:vendor_keychars_file:s0 || abort "Keymap permissions/label failed"
 if [ -d "$PREV" ] && [ "$MODPATH" != "$PREV" ]; then
  P="$PREV/system/vendor/usr/keychars/stmpe.kcm"

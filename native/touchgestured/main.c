@@ -1,6 +1,7 @@
 /*
  * touchgestured: recognises gestures on the KEY2 keyboard surface and sends them as keys.
  *   touchgestured CONFIG [--touch NAME] [--keys NAME]
+ *   touchgestured check CONFIG    validate CONFIG and exit (0 when it would be accepted)
  * It reads the touch surface (default "touch_keypad", which Android must ignore through
  * excluded-input-devices.xml) and the keyboard (default "stmpe_keypad") without grabbing them,
  * and writes to two uinput devices: a keyboard for gesture keys and, when a finger count is passed
@@ -344,6 +345,7 @@ int main(int argc, char **argv)
     static struct daemon d = { .touch_name = "touch_keypad", .keys_name = "stmpe_keypad",
                                .touch_fd = -1, .keys_fd = -1, .kbd_fd = -1, .pad_fd = -1 };
     static struct batch touch, keys;
+    if (argc == 3 && !strcmp(argv[1], "check")) return load_config(argv[2], &d.cfg) ? 1 : 0;
     if (argc < 2 || argc % 2) goto usage;
     for (int i = 2; i < argc; i += 2) {
         if (!strcmp(argv[i], "--touch")) d.touch_name = argv[i + 1];
@@ -403,6 +405,7 @@ int main(int argc, char **argv)
     return stopping ? 0 : 1;
 
 usage:
-    fprintf(stderr, "usage: touchgestured CONFIG [--touch NAME] [--keys NAME]\n");
+    fprintf(stderr, "usage: touchgestured CONFIG [--touch NAME] [--keys NAME]\n"
+                    "       touchgestured check CONFIG\n");
     return 2;
 }

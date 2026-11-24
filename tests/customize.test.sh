@@ -33,6 +33,8 @@ fresh_install_keeps_original() {
         grep -q 'Initial map unchanged' "$WORK/install.log"
 }
 fresh_device; check 'a fresh install stores both originals and installs no key layout' fresh_install_keeps_original
+daemon_is_executable() { installed_ok && grep -qx "set_perm $NEW/bin/touchgestured 0 0 0755" "$WORK/install.log"; }
+fresh_device; check 'the install makes the gesture daemon executable' daemon_is_executable
 
 fresh_device
 sed -i '/SYM/d' "$DEV/vendor/usr/keylayout/stmpe.kl"
