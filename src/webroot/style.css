@@ -87,6 +87,7 @@ dialog::backdrop{background:#0006}
 .gbtn span{font-size:12px;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .gbtn.assigned{background:var(--soft)}
 .gbtn span.fallback{opacity:.5}
+.gbtn span.once{font-size:11px}
 .gbtn.active{outline:3px solid #4789df;outline-offset:-1px}
 #gestureTarget{font-size:16px;margin:10px 0 4px}
 .thresholds{display:grid;gap:10px;margin:8px 0}

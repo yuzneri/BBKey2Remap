@@ -462,14 +462,21 @@ function gestureIds(f, layer) { return KCM.TOUCH_GESTURES.map((g) => KCM.gesture
 function allGestureIds(f) { return KCM.TOUCH_LAYERS.flatMap((l) => gestureIds(f, l.id)); }
 
 /**
- * What gesture G of the selected finger count sends in the selected layer when that layer has no
- * key for it: the base layer's key with the layer's modifier (SYM adds none), or '' if neither has one.
+ * The key value gesture G of the selected finger count sends in the selected layer when that layer
+ * has no key for it: the base layer's key with the layer's modifier (SYM adds none), or '' if
+ * neither has one.
  */
-function fallbackText(g) {
+function fallbackValue(g) {
   const base = map[KCM.gestureId('', touchFingers, g)];
   if (!touchLayer || !base) return '';
   const { code, mods, once } = KCM.parseTouchKey(base);
-  return KCM.touchKeyText(KCM.formatTouchKey(code, touchLayer === 'sym' ? mods : [...mods, touchLayer], once));
+  return KCM.formatTouchKey(code, touchLayer === 'sym' ? mods : [...mods, touchLayer], once);
+}
+
+/** fallbackValue(G) as text such as "Shift+PgUp（1回）", or ''. */
+function fallbackText(g) {
+  const v = fallbackValue(g);
+  return v && KCM.touchKeyText(v);
 }
 
 /** Mode buttons, and in gesture mode the gesture assignments and the thresholds. */
@@ -525,14 +532,18 @@ function renderFingers() {
   const cell = (g) => {
     const id = KCM.gestureId(touchLayer, touchFingers, g.id);
     const fallback = own(map, id) ? '' : fallbackText(g.id);
+    const value = own(map, id) ? map[id] : fallbackValue(g.id);
+    const { code, mods, once } = KCM.parseTouchKey(value);
     const b = button('', () => { touchGesture = g.id; render(); },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
     b.setAttribute('aria-label', KCM.gestureName(id) + '：' +
       (own(map, id) ? KCM.touchKeyText(map[id]) : fallback ? `割り当てなし（${fallback}を送る）` : '割り当てなし'));
     b.setAttribute('aria-pressed', String(touchGesture === g.id));
     // The group heading names the kind, so a button shows only its direction.
+    // The once mark is apart from the key so that a long key's ellipsis cannot hide it.
     b.append(el('small', { textContent: KCM.gestureName(id).replace(/^.*本指で(なぞる|払う)?/, '') }),
-      el('span', { textContent: own(map, id) ? KCM.touchKeyText(map[id]) : fallback || '—', className: fallback ? 'fallback' : '' }));
+      el('span', { textContent: value ? KCM.touchKeyText(KCM.formatTouchKey(code, mods)) : '—', className: fallback ? 'fallback' : '' }));
+    if (once) b.append(el('span', { textContent: '1回', className: 'once' + (fallback ? ' fallback' : '') }));
     b.disabled = pass;
     return b;
   };

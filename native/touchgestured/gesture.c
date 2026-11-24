@@ -9,7 +9,6 @@
 #define MS(v) ((int64_t)(v) * 1000)
 /* A moving finger reports a frame about every 8 ms; one silent this long has stopped. */
 #define STILL_US MS(50)
-/* Speed is measured over this much of the latest movement. */
 
 void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_mm, const struct tg_sink *sink)
 {

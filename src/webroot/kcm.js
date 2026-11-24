@@ -117,7 +117,7 @@
 
   /**
    * Whether ID and VALUE are a touch surface setting: tp:mode (off or gesture), a threshold, a
-   * gesture's key (KEYCODE[+MODIFIER...]) or a passthrough finger count. remap.sh checks ranges and
+   * gesture's key (KEYCODE[+MODIFIER...], then +once for a swipe) or a passthrough finger count. remap.sh checks ranges and
    * key code labels again on the files it generates.
    */
   function validTouch(id, v) {

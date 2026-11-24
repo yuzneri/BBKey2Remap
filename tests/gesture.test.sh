@@ -198,9 +198,11 @@ check 'a slow movement is not a flick' replays "$FLICKS" "$(stroke 0 500 100,200
 # 1.4 mm in 4 ms is 357 mm/s: fast enough, but short of start_mm.
 check 'a flick must cover start_mm' replays "$FLICKS" '0 0=500,200\n2 0=530,200\n4 -0\n' ''
 check 'a finger that stopped before lifting is not a flick' replays "$FLICKS" "$(stroke 0 40 100,200 310,200)200 -0\n" ''
-# NAME:CODE:FROM:TO. The last four are slanting: each goes to the larger of its two axes.
+# NAME:CODE:FROM:TO. The last five are slanting: each goes to the larger of its two axes, and the
+# last one, at 45 degrees, to the horizontal one.
 for dir in up:11:500,200:500,0 down:12:500,0:500,200 left:13:500,200:290,200 right:14:290,200:500,200 \
-    right:14:500,200:700,100 up:11:500,200:560,0 up:11:500,200:380,50 left:13:500,50:300,180; do
+    right:14:500,200:700,100 up:11:500,200:560,0 up:11:500,200:380,50 left:13:500,50:300,180 \
+    right:14:500,200:650,50; do
     IFS=: read -r name code from to <<EOF
 $dir
 EOF
@@ -236,6 +238,14 @@ check 'going back after a once-only swipe follows the opposite direction setting
 check 'a once-only swipe is sent once per touch, even after going back and forth' replays "$ONCE" \
     "$(stroke 0 200 100,200 268,200)$(stroke 210 410 268,200 100,200)$(stroke 420 620 100,200 268,200)620 -0\n" \
     '50 1-finger swipe right key 0x4\n290 1-finger swipe left key 0x3\n360 1-finger swipe left key 0x3\n'
+check 'steps held back for a possible flick send a once-only key once' replays "$ONCE$FLICKS" \
+    "$(stroke 0 40 100,200 310,200)300 -0\n" '166 1-finger swipe right key 0x4\n'
+check 'several steps in one frame send a once-only key once' replays "$ONCE" \
+    '0 0=100,200\n10 0=310,200\n500 -0\n' '10 1-finger swipe right key 0x4\n'
+check 'each direction set to once sends its key once' replays \
+    'bind 1 swipe left key 3 once\nbind 1 swipe right key 4 once\n' \
+    "$(stroke 0 500 100,200 310,200)$(stroke 510 900 310,200 100,200)900 -0\n" \
+    '100 1-finger swipe right key 0x4\n710 1-finger swipe left key 0x3\n'
 check 'the next touch can send the once-only key again' replays "$ONCE" \
     "$(stroke 0 100 100,200 163,200)100 -0\n$(stroke 300 400 100,200 163,200)400 -0\n" \
     '70 1-finger swipe right key 0x4\n370 1-finger swipe right key 0x4\n'
