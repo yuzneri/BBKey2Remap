@@ -543,7 +543,7 @@ function renderFingers() {
     const fallback = own(map, id) ? '' : fallbackText(g.id);
     const value = own(map, id) ? map[id] : fallbackValue(g.id);
     const { code, mods, once } = KCM.parseTouchKey(value);
-    const b = button('', () => { touchGesture = g.id; render(); },
+    const b = button('', () => { touchGesture = g.id; touchCategory = categoryFor(g.id); render(); },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
     b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(g.id)));
     b.setAttribute('aria-pressed', String(touchGesture === g.id));
@@ -562,6 +562,21 @@ function renderFingers() {
     el('div', { className: 'glabel', textContent: 'タップ' }), row('tap'));
 }
 
+/** The palette categories for gesture G: for a swipe, scrolling first (the row scrolls sideways), then the keys. */
+function gestureCategories(g) {
+  return g.startsWith('swipe_') ? [{ id: 'scroll', label: 'スクロール' }, ...KCM.PALETTE] : KCM.PALETTE;
+}
+
+/** The category to open on selecting gesture G: the one holding what it sends, else the current key category. */
+function categoryFor(g) {
+  const value = map[KCM.gestureId(touchLayer, touchFingers, g)];
+  if (value === KCM.TOUCH_SCROLL) return 'scroll';
+  const { code } = KCM.parseTouchKey(value);
+  const holding = KCM.PALETTE.find((c) => c.codes.includes(code));
+  if (holding) return holding.id;
+  return KCM.PALETTE.some((c) => c.id === touchCategory) ? touchCategory : KCM.PALETTE[0].id;
+}
+
 /** The key of the selected gesture: palette, modifiers and removal. */
 function renderGesturePanel() {
   const id = touchGesture && KCM.gestureId(touchLayer, touchFingers, touchGesture);
@@ -570,28 +585,31 @@ function renderGesturePanel() {
   const { code, mods, once } = KCM.parseTouchKey(map[id]);
   const scroll = map[id] === KCM.TOUCH_SCROLL;
   $('gestureTarget').textContent = KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(touchGesture));
+  // What to send comes first; the modifiers and once only apply to a key.
+  $('gestureKeyOptions').hidden = scroll;
   $('gestureMods').replaceChildren(...['ctrl', 'shift', 'alt', 'meta'].map((m) => {
-    const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) || scroll });
+    const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) });
     box.onchange = () => setGestureKey(id, code, box.checked ? [...mods, m] : mods.filter((x) => x !== m), once);
     return el('label', { className: 'check' }, box, document.createTextNode(m[0].toUpperCase() + m.slice(1)));
   }));
   // Only swipes repeat; flicks and taps send their key once anyway.
   $('gestureOnceBox').hidden = !touchGesture.startsWith('swipe_');
   $('gestureOnce').checked = once;
-  $('gestureOnce').disabled = !own(map, id) || scroll;
+  $('gestureOnce').disabled = !own(map, id);
   $('gestureOnce').onchange = () => setGestureKey(id, code, mods, $('gestureOnce').checked);
-  $('gestureScrollBox').hidden = !touchGesture.startsWith('swipe_');
-  $('gestureScroll').className = 'tab' + (scroll ? ' active' : '');
-  $('gestureScroll').setAttribute('aria-pressed', String(scroll));
-  $('gestureScroll').onclick = () => {
-    map[id] = KCM.TOUCH_SCROLL;
-    changed(`${KCM.gestureName(id)}をシステムのスクロールにしました。`);
-  };
   $('gestureHint').textContent = scrollHint(touchGesture, scroll);
-  $('gestureCats').replaceChildren(...KCM.PALETTE.map((c) => button(c.label, () => { touchCategory = c.id; render(); },
+  const cats = gestureCategories(touchGesture);
+  $('gestureCats').replaceChildren(...cats.map((c) => button(c.label, () => { touchCategory = c.id; render(); },
     'tab' + (c.id === touchCategory ? ' active' : ''))));
-  const cat = KCM.PALETTE.find((c) => c.id === touchCategory) || KCM.PALETTE[0];
-  $('gesturePalette').replaceChildren(...cat.codes.map((c) => {
+  const cat = cats.find((c) => c.id === touchCategory) || cats[0];
+  if (cat.id === 'scroll') {
+    const b = button('システムのスクロール', () => {
+      map[id] = KCM.TOUCH_SCROLL;
+      changed(`${KCM.gestureName(id)}をシステムのスクロールにしました。`);
+    }, 'pal wide' + (scroll ? ' active' : ''));
+    b.setAttribute('aria-pressed', String(scroll));
+    $('gesturePalette').replaceChildren(b);
+  } else $('gesturePalette').replaceChildren(...cat.codes.map((c) => {
     const b = button(KCM.shortName(c), () => setGestureKey(id, c, mods, once), 'pal' + (code === c ? ' active' : ''));
     b.title = ACTIONS[c] || c;
     return b;
