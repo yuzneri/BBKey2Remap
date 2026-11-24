@@ -553,6 +553,8 @@ function renderFingers() {
       render();
       // The editor opens below the table, where the fixed save button may cover it.
       $('gesturePalette').scrollIntoView({ block: 'nearest' });
+      // A tall palette would push the heading, which names the gesture being edited, out of sight.
+      $('gestureTarget').scrollIntoView({ block: 'nearest' });
     },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
     b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(g.id)));
@@ -759,7 +761,7 @@ function renderChanges() {
     }, 'remove');
     remove.title = 'リセット';
     return el('tr', { onclick: () => showView('touch') },
-      el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', {}, remove));
+      el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', { onclick: (e) => e.stopPropagation() }, remove));
   }));
   fillChanges($('changesKeys'), ['レイヤー', 'キー', '出力', ''], rows.filter((r) => r.l !== 'tp').map(({ id, l, key, with_ }) => {
     if (l === 'kl') {
@@ -767,14 +769,14 @@ function renderChanges() {
       remove.title = 'リセット';
       return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; showView('keys'); } }, el('td', { textContent: '修飾キー' }),
         el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
-        el('td', {}, remove));
+        el('td', { onclick: (e) => e.stopPropagation() }, remove));
     }
     const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
     remove.title = 'リセット';
     return el('tr', { onclick: () => { selected = key; selectedMod = null; view = 'keys'; setLayer(l); window.scrollTo(0, 0); } },
       el('td', { textContent: layerName(l) + (with_.length ? '（' + with_.map(layerName).join('、') + 'も）' : '') }),
       el('td', { textContent: keyName(key) }),
-      el('td', { textContent: valueText(map[id]) }), el('td', {}, remove));
+      el('td', { textContent: valueText(map[id]) }), el('td', { onclick: (e) => e.stopPropagation() }, remove));
   }));
 }
 

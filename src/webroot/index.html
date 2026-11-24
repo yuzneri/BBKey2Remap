@@ -17,9 +17,9 @@
 <div id="status" role="status">接続中…</div>
 <fieldset id="editor" disabled>
 <nav id="views" class="views" aria-label="設定の種類">
-<button type="button" id="viewbtn-keys" data-view="keys" aria-controls="view-keys" aria-pressed="true">キー</button>
-<button type="button" id="viewbtn-touch" data-view="touch" aria-controls="view-touch" aria-pressed="false">タッチ操作</button>
-<button type="button" id="viewbtn-changes" data-view="changes" aria-controls="view-changes" aria-pressed="false">変更と診断</button>
+<button type="button" data-view="keys" aria-controls="view-keys" aria-pressed="true">キー</button>
+<button type="button" data-view="touch" aria-controls="view-touch" aria-pressed="false">タッチ操作</button>
+<button type="button" data-view="changes" aria-controls="view-changes" aria-pressed="false">変更と診断</button>
 </nav>
 <div id="view-keys" class="view" role="region" aria-label="キー">
 <section>
@@ -63,7 +63,7 @@
 </section>
 </div>
 <div id="view-touch" class="view" role="region" aria-label="タッチ操作" hidden>
-<section id="touch">
+<section>
 <h2>キーボードのタッチ操作</h2>
 <div id="touchModes" class="choices" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
 <p id="touchHint" class="hint"></p>

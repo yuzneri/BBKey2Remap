@@ -15,13 +15,14 @@ section{border-top:1px solid var(--line);margin-top:18px;padding-top:8px}
 .views button+button{border-left:1px solid var(--accent)}
 .views button[aria-pressed=true]{background:var(--accent);color:#fff}
 .views .badge{margin-left:4px}
+.views button[aria-pressed=true] .badge{box-shadow:0 0 0 2px #fff}
 fieldset{border:0;margin:0;padding:0;min-width:0}
 fieldset:disabled{opacity:.65}
 button,select,input,textarea{font:inherit;color:inherit;background:transparent;border:1px solid var(--line);border-radius:9px}
 button,select{padding:10px}
 button:disabled{opacity:.45}
 /* Action buttons stand out from the keys and choices around them; those that undo are orange. */
-.toolbar button,#recheck{min-height:44px;padding:10px 16px;border:2px solid var(--accent-text);color:var(--accent-text);font-weight:700}
+.view .toolbar button,#recheck{min-height:44px;padding:10px 16px;border:2px solid var(--accent-text);color:var(--accent-text);font-weight:700}
 #reset,#resetLayer,#resetAll,#gestureClear,.changes .remove{border-color:var(--warn-text);color:var(--warn-text)}
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px;align-items:center}
 .hint{color:gray;font-size:13px}
@@ -44,7 +45,7 @@ footer{position:sticky;bottom:0;margin-top:24px;padding:10px 0 12px;background:C
 .choice.checked{border-color:var(--accent);background:var(--soft)}
 .tab{flex:none;min-height:44px;padding:10px 14px;border-radius:9px 9px 0 0;position:relative}
 .tab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
-.badge{display:inline-block;min-width:22px;margin-left:6px;padding:0 6px;border-radius:11px;background:var(--warn);color:#fff;font-size:13px;font-weight:700;line-height:22px;text-align:center}
+.badge{display:inline-block;min-width:22px;margin-left:6px;padding:0 6px;border-radius:11px;background:#a35400;color:#fff;font-size:13px;font-weight:700;line-height:22px;text-align:center}
 .tabs .badge{background:var(--line);color:inherit}
 .tab.active .badge{background:#fff;color:var(--accent)}
 details{margin:6px 0}
@@ -62,7 +63,7 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 .key{min-width:0;padding:3px 1px 5px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;min-height:52px;position:relative}
 .key small{font-size:9px;letter-spacing:0;color:#888;max-width:100%;overflow:hidden;white-space:nowrap}
 .key span{font-size:17px;line-height:1.2;max-width:100%;overflow:hidden;white-space:nowrap}
-.key.replace span{font-size:13px;font-weight:600;color:var(--accent)}
+.key.replace span{font-size:13px;font-weight:600;color:var(--accent-text)}
 .key.none span,.key.undefined span{color:#888}
 .key.changed{background:var(--soft)}
 /* An assignment is marked by a dot, on keys and gestures alike. */
@@ -73,7 +74,7 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 .key.mod span{font-size:13px;font-weight:600}
 .key.mod.held{background:var(--accent);color:#fff}
 .key.mod.held small{color:#fffc}
-#pickSource.active,#pickTarget.active{outline:2px solid var(--warn)}
+#pickSource.active,#pickTarget.active{background:var(--accent);border-color:var(--accent);color:#fff}
 
 #panel h2{font-size:20px}
 #current{margin:4px 0}
@@ -88,7 +89,7 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
 th,td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;vertical-align:top;white-space:pre-wrap}
 .changes tr{cursor:pointer}
-.changes .remove{min-width:40px;min-height:40px;padding:4px;border-width:2px;font-size:18px;font-weight:700}
+.changes .remove{min-width:44px;min-height:44px;padding:4px;border-width:2px;font-size:18px;font-weight:700}
 #view-changes h3{font-size:15px;margin:14px 0 0}
 #effective th{width:38%}
 #effective tr{cursor:pointer}
@@ -105,6 +106,8 @@ pre{max-height:250px;overflow:auto;font-size:12px;white-space:pre-wrap}
 dialog{max-width:min(90vw,420px);border:1px solid var(--line);border-radius:12px;color:inherit;background:Canvas}
 dialog::backdrop{background:#0006}
 #confirmText{white-space:pre-wrap;max-height:60vh;overflow:auto}
+#confirm button{min-height:44px;padding:10px 16px}
+#confirm button[value=ok]{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 
 .gestures{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:start;margin:8px 0 0}
 .glabel{font-size:13px;padding-top:12px}
