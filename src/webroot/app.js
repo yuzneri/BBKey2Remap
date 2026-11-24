@@ -23,6 +23,8 @@ let available = KCM.availableModifiers(['SHIFT_LEFT', 'SHIFT_RIGHT', 'ALT_LEFT',
 let klBase = {};
 let klLive = {};
 let klEditable = false;
+// Other excluded device lists that keep this module from turning the touch surface off.
+let touchBlockers = [];
 let current = 'base';
 // Character key being edited; null with selectedMod also null until a key is chosen.
 let selected = null;
@@ -402,6 +404,36 @@ function renderEffective() {
   box.append(table);
 }
 
+// --- Touch surface of the keyboard: "tp:mode" in the map, absent for the ROM's own behaviour.
+
+const TOUCH_MODES = [
+  { id: 'rom', label: 'ROMの標準', hint: 'キーボードの表面をなぞったときの動き（スクロールなど）は、ROMの標準のままです。' },
+  { id: 'off', label: 'オフ', hint: 'キーボードの表面のタッチを使いません。キーを押す操作には影響しません。' },
+];
+
+function touchLabel(v) { return TOUCH_MODES.find((m) => m.id === (v || 'rom')).label; }
+
+/** Mode buttons; "off" cannot be chosen while another excluded device list is in the way. */
+function renderTouch() {
+  const mode = map['tp:mode'] || 'rom';
+  $('touchModes').replaceChildren(...TOUCH_MODES.map((m) => {
+    const b = button(m.label, () => setTouchMode(m.id), 'tab' + (m.id === mode ? ' active' : ''));
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(m.id === mode));
+    b.disabled = m.id === 'off' && mode !== 'off' && touchBlockers.length > 0;
+    return b;
+  }));
+  $('touchHint').textContent = TOUCH_MODES.find((m) => m.id === mode).hint +
+    (touchBlockers.length ? `${touchBlockers.join('、')}があるため、オフにできません。` : '');
+}
+
+function setTouchMode(id) {
+  if (id === (map['tp:mode'] || 'rom')) return;
+  if (id === 'rom') delete map['tp:mode'];
+  else map['tp:mode'] = id;
+  changed(`キーボードのタッチ操作を${touchLabel(id)}にしました。`);
+}
+
 /** Change-list rows: companion assignments (same key and value) are folded into their main row. */
 function changeRows() {
   const ids = Object.keys(map).sort();
@@ -409,7 +441,7 @@ function changeRows() {
   const rows = [];
   for (const id of ids) {
     const [l, key] = id.split(':');
-    const with_ = l === 'kl' ? [] : sameAs(l, key).filter((c) => map[c + ':' + key] === map[id]);
+    const with_ = l === 'kl' || l === 'tp' ? [] : sameAs(l, key).filter((c) => map[c + ':' + key] === map[id]);
     with_.forEach((c) => folded.add(c + ':' + key));
     rows.push({ id, l, key, with_ });
   }
@@ -429,6 +461,12 @@ function renderChanges() {
           el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
           el('td', {}, remove));
       }
+      if (l === 'tp') {
+        const remove = button('✕', (e) => { e.stopPropagation(); delete map[id]; changed('キーボードのタッチ操作をROMの標準に戻しました。'); }, 'remove');
+        remove.title = 'リセット';
+        return el('tr', { onclick: () => $('touch').scrollIntoView() }, el('td', { textContent: 'タッチ操作' }),
+          el('td', { textContent: '—' }), el('td', { textContent: touchLabel(map[id]) }), el('td', {}, remove));
+      }
       const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
       remove.title = 'リセット';
       return el('tr', { onclick: () => { selected = key; selectedMod = null; setLayer(l); } },
@@ -442,6 +480,7 @@ function render() {
   renderTabs();
   renderKeyboard();
   renderPanel();
+  renderTouch();
   renderChanges();
 }
 
@@ -479,6 +518,7 @@ async function loadStatus() {
   klBase = st.klBase;
   klLive = st.klLive;
   klEditable = st.klEditable;
+  touchBlockers = [...st.tpForeign, ...st.tpConflicts.map((m) => 'モジュール' + m)];
   renderDiagnostics(st);
 }
 
@@ -575,6 +615,7 @@ $('save').onclick = async () => {
     const lines = diff.map((d) => {
       const [l, key] = d.id.split(':');
       if (l === 'kl') return `${modName(key)}の割り当て：${KCM.roleName(d.from || klBase[key])} → ${KCM.roleName(d.to || klBase[key])}`;
+      if (l === 'tp') return `キーボードのタッチ操作：${touchLabel(d.from)} → ${touchLabel(d.to)}`;
       const plain = (v) => valueText(v).replace(/^→ /, '');
       return `${layerName(l)} + ${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
     });
