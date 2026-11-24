@@ -106,6 +106,37 @@ test('status lines parse into diagnostics', () => {
     ['off', 'foreign', 'no', ['/system/etc/excluded-input-devices.xml'], ['other']]);
 });
 
+test('gestures: the 13 of touchgestured, their names, and their key values', () => {
+  assert.equal(KCM.TOUCH_GESTURES.length, 13);
+  assert.deepEqual(KCM.TOUCH_GESTURES.map((g) => g.id).slice(0, 5), ['swipe_up', 'swipe_down', 'swipe_left', 'swipe_right', 'flick_up']);
+  assert.equal(KCM.TOUCH_GESTURES[12].id, 'tap');
+  assert.equal(KCM.gestureName('tp:2_flick_upleft'), '2本指で払う↖');
+  assert.equal(KCM.gestureName('tp:1_tap'), '1本指でタップ');
+  for (const g of KCM.TOUCH_GESTURES) assert.ok(KCM.validate({ ['tp:3_' + g.id]: 'ENTER' }), g.id);
+  assert.deepEqual(KCM.parseTouchKey('DPAD_LEFT+shift+ctrl'), { code: 'DPAD_LEFT', mods: ['ctrl', 'shift'] });
+  assert.equal(KCM.formatTouchKey('DPAD_LEFT', ['meta', 'ctrl']), 'DPAD_LEFT+ctrl+meta');
+  assert.equal(KCM.formatTouchKey('ENTER', []), 'ENTER');
+  assert.equal(KCM.touchKeyText('DPAD_LEFT+ctrl+shift'), 'Ctrl+Shift+←');
+});
+
+test('thresholds are checked against the range touchgestured reports', () => {
+  const mm = { name: 'step_mm', min: 0.5, max: 25 };
+  const ms = { name: 'tap_ms', min: 0, max: 2000 };
+  for (const ok of ['0.5', '3', '2.5', '25']) assert.ok(KCM.validThreshold(mm, ok), ok);
+  for (const bad of ['0.4', '25.1', '', '2.', '.5', '-1', '1e2', 'x']) assert.ok(!KCM.validThreshold(mm, bad), bad);
+  assert.ok(KCM.validThreshold(ms, '0') && KCM.validThreshold(ms, '2000'));
+  assert.ok(!KCM.validThreshold(ms, '10.5') && !KCM.validThreshold(ms, '2001'));
+});
+
+test('diagnostics warn when the gesture daemon is not running in gesture mode', () => {
+  const text = (s) => KCM.diagnose(KCM.parseStatus(GOOD_STATUS + s)).map((d) => (d.warn ? '!' : '') + d.text);
+  const live = 'tp_saved=gesture\ntp_live=gesture\ntp_excluded=yes\n';
+  assert.ok(text(live + 'tp_daemon=stopped\ntp_daemon_log=touchgestured: no uinput\n')
+    .includes('!ジェスチャーを読み取る常駐プログラムが動いていません。最後の記録：touchgestured: no uinput'));
+  assert.ok(text(live + 'tp_daemon=running\n').every((t) => !t.startsWith('!')));
+  assert.ok(text('tp_saved=gesture\ntp_live=off\ntp_daemon=stopped\n').every((t) => !t.includes('常駐プログラム')), 'pending reboot');
+});
+
 test('status lines give the thresholds from touchgestured and whether it runs', () => {
   const st = KCM.parseStatus('tp_threshold=step_mm:3:0.5:25\ntp_threshold=tap_ms:200:0:2000\ntp_threshold=bad:x:1:2\n' +
     'tp_daemon=stopped\ntp_daemon_log=touchgestured: /dev/uinput: Permission denied\n');

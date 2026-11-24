@@ -125,6 +125,49 @@
     return /^[A-Z0-9][A-Z0-9_]*$/.test(code) && mods.every((m, i) => TOUCH_MODIFIERS.includes(m) && mods.indexOf(m) === i);
   }
 
+  const ARROWS = { up: '↑', down: '↓', left: '←', right: '→', upleft: '↖', upright: '↗', downleft: '↙', downright: '↘' };
+  /** The gestures of one finger count, in touchgestured's order: {id ("swipe_up"), kind, dir}. */
+  const TOUCH_GESTURES = [
+    ...['up', 'down', 'left', 'right'].map((dir) => ({ id: 'swipe_' + dir, kind: 'swipe', dir })),
+    ...['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright'].map((dir) => ({ id: 'flick_' + dir, kind: 'flick', dir })),
+    { id: 'tap', kind: 'tap', dir: '' },
+  ];
+  const TOUCH_KINDS = { swipe: 'なぞる', flick: '払う', tap: 'タップ' };
+
+  /** "2本指で払う↖" for a gesture setting ID such as "tp:2_flick_upleft". */
+  function gestureName(id) {
+    const m = /^tp:([123])_(.*)$/.exec(id);
+    const g = m && TOUCH_GESTURES.find((x) => x.id === m[2]);
+    return g ? `${m[1]}本指で${TOUCH_KINDS[g.kind]}${ARROWS[g.dir] || ''}` : id;
+  }
+
+  /** A gesture's key value "CODE[+mod...]" as {code, mods}; mods in TOUCH_MODIFIERS order. */
+  function parseTouchKey(v) {
+    const [code, ...mods] = (v || '').split('+');
+    return { code, mods: TOUCH_MODIFIERS.filter((m) => mods.includes(m)) };
+  }
+
+  /** The value for key CODE with modifiers MODS, which may come in any order. */
+  function formatTouchKey(code, mods) {
+    return [code, ...TOUCH_MODIFIERS.filter((m) => mods.includes(m))].join('+');
+  }
+
+  /** "Ctrl+Shift+←" for a gesture's key value. */
+  function touchKeyText(v) {
+    const { code, mods } = parseTouchKey(v);
+    return [...mods.map((m) => MODIFIER_NAMES[m]), shortName(code)].join('+');
+  }
+
+  /**
+   * Whether text is acceptable for threshold T ({name, min, max} from touchgestured): a plain
+   * number in range, whole for the millisecond ones.
+   */
+  function validThreshold(t, text) {
+    if (!/^[0-9]+(\.[0-9]+)?$/.test(text)) return false;
+    const v = Number(text);
+    return v >= t.min && v <= t.max && (!t.name.endsWith('_ms') || Number.isInteger(v));
+  }
+
   /** Whether ID ("layer:KEY") names a canonical layer and a KEY2 key. */
   function validId(id) {
     const p = id.split(':');
@@ -486,6 +529,10 @@
     }
     if (st.kcmLoaded && /\/stmpe\.kcm$/.test(st.kcmLoaded)) out.push({ warn: false, text: `Androidは${st.kcmLoaded}を読み込んでいます。` });
     if (st.klLoaded && /\/stmpe\.kl$/.test(st.klLoaded)) out.push({ warn: false, text: `Androidは${st.klLoaded}を読み込んでいます。` });
+    if (st.tpSaved === 'gesture' && st.tpLive === 'gesture' && st.tpDaemon === 'stopped') {
+      out.push({ warn: true, text: 'ジェスチャーを読み取る常駐プログラムが動いていません。' +
+        (st.tpDaemonLog ? `最後の記録：${st.tpDaemonLog}` : '保存し直すか、再起動してください。') });
+    }
     const touchApplied = takes(st.tpSaved) ? st.tpLive === st.tpSaved : !takes(st.tpLive);
     if (takes(st.tpSaved)) {
       if (!touchApplied) out.push({ warn: false, text: `キーボードのタッチ操作は再起動後に${modeName(st.tpSaved)}になります。` });
@@ -625,6 +672,7 @@
     META, MODIFIERS, ORDER, ROWS, KEYS, ACTIONS,
     canonical, validValue, validId, validate, parseKcm, matchesMetaState, evaluate,
     availableModifiers, unreachableParts, pressStates, companions, ruleLayers, effectiveRows,
+    TOUCH_GESTURES, gestureName, parseTouchKey, formatTouchKey, touchKeyText, validThreshold,
     warnings, parseStatus, diagnose, diffAssignments, PALETTE, shortName, legend, keyCodeOf, editableKeyOf,
     PHYSICAL, LAYOUT, ROLE_MODIFIERS, ROLE_NOTICE, validRole, roleName, modifierLabel, rolesOf, layerOf, availableFromRoles, roleWarnings,
   };
