@@ -112,6 +112,14 @@ test('gestures: the 13 of touchgestured, their names, and their key values', () 
   assert.deepEqual(KCM.TOUCH_GESTURES.map((g) => g.id), ['swipe_up', 'swipe_down', 'swipe_left', 'swipe_right',
     'flick_up', 'flick_down', 'flick_left', 'flick_right', 'flick_upleft', 'flick_upright', 'flick_downleft', 'flick_downright', 'tap']);
   assert.throws(() => KCM.validate({ 'tp:2_pass': 'on', 'tp:2_tap': 'ENTER' }), /2本指/);
+  assert.throws(() => KCM.validate({ 'tp:2_pass': 'on', 'tp:sym_2_tap': 'ENTER' }), /2本指/);
+  assert.ok(KCM.validate({ 'tp:shift_1_swipe_left': 'MOVE_HOME+shift', 'tp:ctrl_3_flick_downright': 'ENTER', 'tp:1_swipe_left': 'DPAD_LEFT' }));
+  for (const bad of ['tp:meta_1_tap', 'tp:shift_1_pass', 'tp:shift_shift_1_tap', 'tp:_1_tap']) {
+    assert.throws(() => KCM.validate({ [bad]: bad.endsWith('pass') ? 'on' : 'ENTER' }), bad);
+  }
+  assert.equal(KCM.gestureName('tp:shift_2_flick_upleft'), 'Shift＋2本指で払う↖');
+  assert.equal(KCM.gestureId('sym', '3', 'tap'), 'tp:sym_3_tap');
+  assert.equal(KCM.gestureId('', '1', 'swipe_up'), 'tp:1_swipe_up');
   assert.ok(KCM.validate({ 'tp:2_pass': 'on', 'tp:1_tap': 'ENTER' }));
   assert.equal(KCM.gestureName('tp:2_flick_upleft'), '2本指で払う↖');
   assert.equal(KCM.gestureName('tp:1_tap'), '1本指でタップ');

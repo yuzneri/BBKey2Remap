@@ -269,12 +269,12 @@ save_gestures() {
     set -f; out=$(remap save sym:H=R_DPAD_LEFT $GESTURES) || { echo "$out"; set +f; return 1; }; set +f
     grep -qx '<!-- KEY2_TP mode=gesture -->' "$DST_TP" && [ "$(excluded_names "$DST_TP")" = touch_keypad ] &&
         grep -qx 'step_mm 2.5' "$DST_TG_CONF" && grep -qx 'bind 1 swipe left key 514 shift' "$DST_TG_CONF" &&
-        grep -qx 'bind 2 tap key 540' "$DST_TG_CONF" && grep -qx 'pass 3' "$DST_TG_CONF" &&
+        grep -qx 'bind 2 tap key 537' "$DST_TG_CONF" && grep -qx 'pass 3' "$DST_TG_CONF" &&
         grep -qx 'mod 42 shift' "$DST_TG_CONF" && grep -qx 'mod 54 shift' "$DST_TG_CONF" &&
         grep -qx 'mod 56 alt' "$DST_TG_CONF" && grep -qx 'mod 110 ctrl' "$DST_TG_CONF" &&
         "$GESTURETOOL" check "$DST_TG_CONF" >/dev/null && [ "$(stat -c %a "$DST_TG_CONF")" = 600 ] &&
         "$KLTOOL" check "$DST_TG_KL" >/dev/null && grep -qx 'key 514 DPAD_LEFT' "$DST_TG_KL" &&
-        grep -qx 'key 540 ENTER' "$DST_TG_KL" && grep -qx 'key 42 SHIFT_LEFT' "$DST_TG_KL" &&
+        grep -qx 'key 537 ENTER' "$DST_TG_KL" && grep -qx 'key 42 SHIFT_LEFT' "$DST_TG_KL" &&
         grep -qx 'touch.deviceType = touchPad' "$DST_TG_IDC" &&
         [ "$(stat -c %a "$DST_TG_KL")" = 644 ] && [ "$(stat -c %a "$DST_TG_IDC")" = 644 ] &&
         grep -q 'u:object_r:system_file:s0 .*/.touch.kl.[0-9]*' "$DEV/chcon.log" &&
@@ -296,6 +296,21 @@ gestures_kept_in_off_mode() {
         [ "$(remap read | sort | tr '\n' ' ')" = 'tp:1_tap=ENTER tp:mode=off ' ]
 }
 check 'gesture settings are kept outside gesture mode, without the key layout and IDC' gestures_kept_in_off_mode
+
+layered_gestures() {
+    remap save kl:100=SYM tp:mode=gesture tp:1_swipe_left=DPAD_LEFT tp:shift_1_swipe_left=MOVE_HOME \
+        tp:sym_3_tap=ENTER+ctrl >/dev/null &&
+        grep -qx 'bind 1 swipe left key 514' "$DST_TG_CONF" && grep -qx 'bind shift 1 swipe left key 553' "$DST_TG_CONF" &&
+        grep -qx 'bind sym 3 tap key 746 ctrl' "$DST_TG_CONF" && grep -qx 'mod 100 sym' "$DST_TG_CONF" &&
+        grep -qx 'key 553 MOVE_HOME' "$DST_TG_KL" && grep -qx 'key 746 ENTER' "$DST_TG_KL" &&
+        "$GESTURETOOL" check "$DST_TG_CONF" >/dev/null && "$KLTOOL" check "$DST_TG_KL" >/dev/null &&
+        [ "$(remap read | grep '^tp:' | sort | tr '\n' ' ')" = 'tp:1_swipe_left=DPAD_LEFT tp:mode=gesture tp:shift_1_swipe_left=MOVE_HOME tp:sym_3_tap=ENTER+ctrl ' ]
+}
+check 'gestures of modifier layers get their own scan codes, the last ones above the gamepad range' layered_gestures
+check 'passthrough is not per layer' refused 'タッチ操作の設定が正しくありません' remap save tp:shift_1_pass=on
+check 'an unknown layer is refused' refused 'タッチ操作の設定が正しくありません' remap save tp:meta_1_tap=ENTER
+check 'a layer binding next to passthrough of its finger count is refused by the daemon check' refused \
+    'タッチ操作の設定が正しくないため' remap save tp:1_pass=on tp:alt_1_tap=ENTER
 
 gestures_removed() {
     remap save sym:H=R_DPAD_LEFT >/dev/null && [ ! -e "$DST_TG_CONF" ] && [ ! -e "$DST_TP" ] && [ ! -e "$MOD/system/usr" ]

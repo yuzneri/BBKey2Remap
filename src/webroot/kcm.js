@@ -109,7 +109,10 @@
   // remap.sh's grammar for a threshold; the length also keeps a settings line under its 256 bytes.
   const THRESHOLD_FORM = /^[0-9]{1,5}(\.[0-9]{1,6})?$/;
   const TOUCH_THRESHOLDS = ['start_mm', 'step_mm', 'flick_mm_s', 'tap_ms', 'hold_ms', 'gather_ms', 'after_key_ms'];
-  const TOUCH_GESTURE = /^tp:[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right|upleft|upright|downleft|downright)|tap)$/;
+  const TOUCH_GESTURE = /^tp:((shift|alt|ctrl|sym)_)?[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right|upleft|upright|downleft|downright)|tap)$/;
+  /** Gesture layers: while the physical modifier is held, its layer's gesture keys are used. */
+  const TOUCH_LAYERS = [{ id: '', label: 'なし' }, { id: 'shift', label: 'Shift' }, { id: 'alt', label: 'Alt' },
+    { id: 'ctrl', label: 'Ctrl' }, { id: 'sym', label: 'SYM' }];
   const TOUCH_MODIFIERS = ['ctrl', 'shift', 'alt', 'meta'];
 
   /**
@@ -136,11 +139,16 @@
   ];
   const TOUCH_KINDS = { swipe: 'なぞる', flick: '払う', tap: 'タップ' };
 
-  /** "2本指で払う↖" for a gesture setting ID such as "tp:2_flick_upleft". */
+  /** The setting ID of gesture G ("flick_upleft") of FINGERS ("2") in LAYER ("" or "shift"). */
+  function gestureId(layer, fingers, g) { return `tp:${layer ? layer + '_' : ''}${fingers}_${g}`; }
+
+  /** "Shift＋2本指で払う↖" for a gesture setting ID such as "tp:shift_2_flick_upleft". */
   function gestureName(id) {
-    const m = /^tp:([123])_(.*)$/.exec(id);
-    const g = m && TOUCH_GESTURES.find((x) => x.id === m[2]);
-    return g ? `${m[1]}本指で${TOUCH_KINDS[g.kind]}${ARROWS[g.dir] || ''}` : id;
+    const m = /^tp:(?:(shift|alt|ctrl|sym)_)?([123])_(.*)$/.exec(id);
+    const g = m && TOUCH_GESTURES.find((x) => x.id === m[3]);
+    if (!g) return id;
+    const layer = m[1] ? TOUCH_LAYERS.find((l) => l.id === m[1]).label + '＋' : '';
+    return `${layer}${m[2]}本指で${TOUCH_KINDS[g.kind]}${ARROWS[g.dir] || ''}`;
   }
 
   /** A gesture's key value "CODE[+mod...]" as {code, mods}; mods in TOUCH_MODIFIERS order. */
@@ -189,7 +197,7 @@
     }
     // touchgestured refuses a finger count that is both passed through and given gestures.
     for (const f of ['1', '2', '3']) {
-      if (out[`tp:${f}_pass`] && TOUCH_GESTURES.some((g) => own(out, `tp:${f}_${g.id}`))) {
+      if (out[`tp:${f}_pass`] && TOUCH_LAYERS.some((l) => TOUCH_GESTURES.some((g) => own(out, gestureId(l.id, f, g.id))))) {
         throw new Error(`${f}本指は、ROMの標準の動作に渡す設定とジェスチャーの割り当てを同時には持てません。`);
       }
     }
@@ -687,7 +695,7 @@
     META, MODIFIERS, ORDER, ROWS, KEYS, ACTIONS,
     canonical, validValue, validId, validate, parseKcm, matchesMetaState, evaluate,
     availableModifiers, unreachableParts, pressStates, companions, ruleLayers, effectiveRows,
-    TOUCH_GESTURES, gestureName, parseTouchKey, formatTouchKey, touchKeyText, validThreshold,
+    TOUCH_GESTURES, TOUCH_LAYERS, gestureId, gestureName, parseTouchKey, formatTouchKey, touchKeyText, validThreshold,
     warnings, parseStatus, diagnose, diffAssignments, PALETTE, shortName, legend, keyCodeOf, editableKeyOf,
     PHYSICAL, LAYOUT, ROLE_MODIFIERS, ROLE_NOTICE, validRole, roleName, modifierLabel, rolesOf, layerOf, availableFromRoles, roleWarnings,
   };

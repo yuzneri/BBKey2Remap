@@ -13,7 +13,8 @@
 # by patch.awk), or kl:SCANCODE=KEYCODE for a modifier key's role in the key layout, e.g.
 # kl:110=CTRL_LEFT (validated again by klpatch.awk), or tp:ID=VALUE for the keyboard's touch
 # surface: tp:mode=off|gesture, a threshold such as tp:step_mm=3, a gesture's key such as
-# tp:1_swipe_left=DPAD_LEFT+shift, or tp:3_pass=on (checked again by touchgestured check).
+# tp:1_swipe_left=DPAD_LEFT+shift (with a layer prefix such as tp:shift_1_swipe_left for the key
+# while that physical modifier is held), or tp:3_pass=on (checked again by touchgestured check).
 set -eu
 case $0 in */*) dir=${0%/*} ;; *) dir=. ;; esac
 BASE=$(cd "$dir" && pwd -P)
@@ -103,7 +104,9 @@ write_configs() {
 # TP_CONFIG. Ranges, modifier names and key code labels are checked on the generated files.
 check_touch() {
     id=${1%%=*} value=${1#*=}
-    case "$id" in
+    gesture=$id
+    case "$id" in shift_*|alt_*|ctrl_*|sym_*) gesture=${id#*_} ;; esac
+    case "$gesture" in
         start_mm|step_mm|flick_mm_s|tap_ms|hold_ms|gather_ms|after_key_ms)
             # The same grammar as the WebUI's (kcm.js): up to 5 digits, optionally "." and up to 6 more.
             case "$value" in ''|*[!0-9.]*|.*|*.|*.*.*) fail 'タッチ操作の設定が正しくありません。' ;; esac
@@ -114,7 +117,7 @@ check_touch() {
         [123]_flick_upleft|[123]_flick_upright|[123]_flick_downleft|[123]_flick_downright)
             case "$value" in [A-Z0-9]*) ;; *) fail 'タッチ操作の設定が正しくありません。' ;; esac
             case "$value" in *[!A-Za-z0-9_+]*|*+|*++*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
-        [123]_pass) [ "$value" = on ] || fail 'タッチ操作の設定が正しくありません。' ;;
+        [123]_pass) [ "$id" = "$gesture" ] && [ "$value" = on ] || fail 'タッチ操作の設定が正しくありません。' ;;
         *) fail 'タッチ操作の設定が正しくありません。' ;;
     esac
     ! grep -q "^$id=" "$2" || fail 'タッチ操作の設定が重複しています。'
