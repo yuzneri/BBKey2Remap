@@ -9,6 +9,9 @@
  *       --keys DEVICE (default /dev/input/event2), and skipped otherwise.
  *       Events passed through to the virtual touchpad print as "MS pass TYPE CODE VALUE" with
  *       their original time and getevent's names and hexadecimal values.
+ *       Two pseudo events stand for what the daemon reads from the kernel: "RESYNC CURRENT_SLOT
+ *       ID:X:Y|-1 ..." on the touch surface (tg_resync) and "HELD SCANCODE ..." on the keyboard
+ *       (tg_set_held_keys).
  */
 #include "config.h"
 #include "gesture.h"
@@ -113,34 +116,81 @@ static void print_pass(void *ctx, const struct tg_event *ev)
 
 enum source { SKIP, FROM_TOUCH, FROM_KEYS };
 
+#define MAX_WORDS (2 + TG_SLOTS)
+
+/* A log line: its time, which device it is from, and its words after any device prefix. */
+struct line {
+    enum source src;
+    int64_t t_us;
+    char *word[MAX_WORDS];
+    int nwords;
+};
+
 /*
- * Parses "[   77941.651292] EV_ABS ABS_MT_POSITION_X 0000030f", optionally with "/dev/input/eventN: "
- * after the timestamp. Returns the event's source, SKIP for a line to skip, -1 for a malformed line.
+ * Splits "[   77941.651292] EV_ABS ABS_MT_POSITION_X 0000030f", optionally with "/dev/input/eventN: "
+ * after the timestamp. Returns false for a line that is not from the touch surface or keyboard.
  */
-static int parse_line(char *line, const char *touch, const char *keys, struct tg_event *ev)
+static bool split_line(char *text, const char *touch, const char *keys, struct line *l)
 {
-    enum source src = FROM_TOUCH;
-    long sec, usec, type, code, value;
+    long sec, usec;
     int n = 0;
-    if (sscanf(line, " [ %ld.%6ld]%n", &sec, &usec, &n) != 2 || !n) return 0;
-    char *tok[4];
-    int ntok = 0;
-    for (char *save, *t = strtok_r(line + n, " \t\r\n", &save); t && ntok < 4; t = strtok_r(NULL, " \t\r\n", &save))
-        tok[ntok++] = t;
-    char **f = tok;
-    if (ntok && tok[0][0] == '/') {
-        size_t len = strlen(tok[0]);
-        if (tok[0][len - 1] == ':') tok[0][len - 1] = '\0';
-        if (!strcmp(tok[0], keys)) src = FROM_KEYS;
-        else if (strcmp(tok[0], touch)) return SKIP;
-        f++;
-        ntok--;
+    if (sscanf(text, " [ %ld.%6ld]%n", &sec, &usec, &n) != 2 || !n) return false;
+    l->src = FROM_TOUCH;
+    l->t_us = sec * 1000000 + usec;
+    l->nwords = 0;
+    char *save, *w = strtok_r(text + n, " \t\r\n", &save);
+    if (w && w[0] == '/') {
+        size_t len = strlen(w);
+        if (w[len - 1] == ':') w[len - 1] = '\0';
+        if (!strcmp(w, keys)) l->src = FROM_KEYS;
+        else if (strcmp(w, touch)) return false;
+        w = strtok_r(NULL, " \t\r\n", &save);
     }
-    if (ntok != 3 || !LOOKUP(TYPES, f[0], &type) || !(LOOKUP(CODES, f[1], &code) || LOOKUP(KEYS, f[1], &code)) ||
-        !LOOKUP(VALUES, f[2], &value))
-        return -1;
-    *ev = (struct tg_event){ .t_us = sec * 1000000 + usec, .type = (uint16_t)type, .code = (uint16_t)code, .value = (int32_t)value };
-    return src;
+    for (; w; w = strtok_r(NULL, " \t\r\n", &save)) {
+        if (l->nwords == MAX_WORDS) { l->nwords = -1; break; }
+        l->word[l->nwords++] = w;
+    }
+    return true;
+}
+
+static bool parse_event(const struct line *l, struct tg_event *ev)
+{
+    long type, code, value;
+    if (l->nwords != 3 || !LOOKUP(TYPES, l->word[0], &type) ||
+        !(LOOKUP(CODES, l->word[1], &code) || LOOKUP(KEYS, l->word[1], &code)) || !LOOKUP(VALUES, l->word[2], &value))
+        return false;
+    *ev = (struct tg_event){ .t_us = l->t_us, .type = (uint16_t)type, .code = (uint16_t)code, .value = (int32_t)value };
+    return true;
+}
+
+/* "RESYNC CURRENT_SLOT ID:X:Y|-1 ...": what the daemon reads from the kernel after SYN_DROPPED. */
+static bool parse_resync(const struct line *l, struct tg_state *st)
+{
+    int32_t ids[TG_SLOTS], xs[TG_SLOTS], ys[TG_SLOTS];
+    int current, nslots = l->nwords - 2;
+    char end;
+    if (nslots < 1 || sscanf(l->word[1], "%d%c", &current, &end) != 1) return false;
+    for (int s = 0; s < nslots; s++) {
+        xs[s] = ys[s] = 0;
+        int got = sscanf(l->word[2 + s], "%d:%d:%d%c", &ids[s], &xs[s], &ys[s], &end);
+        if (!(got == 3 || (got == 1 && ids[s] == -1))) return false;
+    }
+    tg_resync(st, l->t_us, nslots, ids, xs, ys, current);
+    return true;
+}
+
+/* "HELD SCANCODE ...": the keys the daemon reads as held when it (re)opens the keyboard. */
+static bool parse_held(const struct line *l, struct tg_state *st)
+{
+    uint8_t bits[KEY_CNT / 8 + 1] = { 0 };
+    for (int i = 1; i < l->nwords; i++) {
+        char *end;
+        long code = strtol(l->word[i], &end, 10);
+        if (*end || code < 0 || code >= KEY_CNT) return false;
+        bits[code / 8] |= (uint8_t)(1 << (code % 8));
+    }
+    tg_set_held_keys(st, bits, sizeof bits);
+    return true;
 }
 
 static int replay(const struct tg_config *cfg, const char *path, double resolution, const char *touch, const char *keys)
@@ -150,17 +200,22 @@ static int replay(const struct tg_config *cfg, const char *path, double resoluti
     struct tg_state st;
     struct tg_sink sink = { .key = print_key, .pass = print_pass };
     tg_init(&st, cfg, resolution, &sink);
-    char line[512];
+    char text[512];
     int64_t last = 0;
-    for (int lineno = 1; fgets(line, sizeof line, in); lineno++) {
+    for (int lineno = 1; fgets(text, sizeof text, in); lineno++) {
+        struct line l;
+        if (!split_line(text, touch, keys, &l)) continue;
+        if (origin_us < 0) origin_us = l.t_us;
         struct tg_event ev;
-        int src = parse_line(line, touch, keys, &ev);
-        if (src < 0) { fprintf(stderr, "%s:%d: not a getevent -lt event line\n", path, lineno); fclose(in); return 1; }
-        if (src == SKIP) continue;
-        if (origin_us < 0) origin_us = ev.t_us;
-        if (src == FROM_KEYS) tg_key_event(&st, &ev);
-        else tg_touch_event(&st, &ev);
-        last = ev.t_us;
+        bool ok = l.nwords > 0;
+        if (ok && !strcmp(l.word[0], "RESYNC")) ok = l.src == FROM_TOUCH && parse_resync(&l, &st);
+        else if (ok && !strcmp(l.word[0], "HELD")) ok = l.src == FROM_KEYS && parse_held(&l, &st);
+        else if (ok && (ok = parse_event(&l, &ev))) {
+            if (l.src == FROM_KEYS) tg_key_event(&st, &ev);
+            else tg_touch_event(&st, &ev);
+        }
+        if (!ok) { fprintf(stderr, "%s:%d: not a getevent -lt event line\n", path, lineno); fclose(in); return 1; }
+        last = l.t_us;
     }
     fclose(in);
     tg_advance(&st, last + 60 * 1000000LL); /* let pending deadlines pass */

@@ -299,6 +299,26 @@ check 'SYN_DROPPED abandons a recognised touch too' sh -c '[ -z "$("$1" replay "
 check 'events after SYN_DROPPED are not used until the next SYN_REPORT' sh -c '[ -z "$("$1" replay "$2" "$3")" ]' \
     - "$GESTURETOOL" "$WORK/g.conf" "$WORK/drop-partial.log"
 
+# What the daemon does after SYN_DROPPED: it discards the queued events and gives the kernel's
+# current slots (RESYNC CURRENT_SLOT ID:X:Y per slot, -1 for an empty one).
+{ touches '0 0=100,200\n10 0=110,200\n'; echo '[  1000.030000] EV_SYN SYN_DROPPED 00000000'
+  echo '[  1000.030000] RESYNC 0 1:300:200 -1 -1 -1'
+  touches '40 0=310,200\n100 0=500,200\n300 -0\n400 0=500,200\n450 -0\n' | grep -v 'TRACKING_ID 00000001$'; } > "$WORK/resync-held.log"
+conf "$SWIPES$TAPS"
+check 'after a drop, a finger held across it is ignored until lifted, and the next touch counts' \
+    sh -c '[ "$("$1" replay "$2" "$3")" = "450 1-finger tap key 0x1" ]' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/resync-held.log"
+{ touches '0 0=100,200\n'; echo '[  1000.030000] EV_SYN SYN_DROPPED 00000000'
+  echo '[  1000.030000] RESYNC 1 -1 7:300:200 -1 -1'
+  printf '[  1000.040000] EV_ABS ABS_MT_POSITION_X 00000190\n[  1000.040000] EV_SYN SYN_REPORT 00000000\n'
+  printf '[  1000.100000] EV_ABS ABS_MT_TRACKING_ID ffffffff\n[  1000.100000] EV_SYN SYN_REPORT 00000000\n'
+  touches '400 0=500,200\n450 -0\n'; } > "$WORK/resync-new.log"
+check 'a finger that landed during a drop is ignored until lifted' \
+    sh -c '[ "$("$1" replay "$2" "$3")" = "450 1-finger tap key 0x1" ]' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/resync-new.log"
+conf "pass 1\n"
+{ touches '0 0=100,200\n'; echo '[  1000.000000] RESYNC 0 -1 -1 -1 -1'; } > "$WORK/resync-pass.log"
+check 'a resync with no fingers lifts the fingers passed through' \
+    sh -c '"$1" replay "$2" "$3" | grep -q "pass EV_ABS ABS_MT_TRACKING_ID ffffffff"' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/resync-pass.log"
+
 conf 'pass 1\n'
 check 'device recording: every event of passed-through touches reaches the virtual touchpad' sh -c '
     [ "$("$1" replay "$2" "$3" | grep -vc "ABS_MT_SLOT 00000000$")" = "$(grep -vc "ABS_MT_SLOT *00000000$" "$3")" ]' \
@@ -308,10 +328,12 @@ check 'device recording: every event of passed-through touches reaches the virtu
 keys() {
     printf "$1" | awk '{ printf "[%6d.%06d] /dev/input/event2: EV_KEY %s %s\n", 1000 + int($1 / 1000), ($1 % 1000) * 1000, $2, $3 }'
 }
-# replays_keys CONFIG SCRIPT KEYS EXPECTED: like replays, with keyboard events merged in by time.
+# replays_keys CONFIG SCRIPT KEYS EXPECTED [HELD_LINE]: like replays, with keyboard events merged in
+# by time, and HELD_LINE (a pseudo event of the keyboard) given at 100 ms.
 replays_keys() {
     conf "$1"
-    { touches "$2"; keys "$3"; } | sort -s -t']' -k1,1 > "$WORK/touch.log"
+    { touches "$2"; keys "$3"; [ -z "${5:-}" ] || echo "[  1000.100000] /dev/input/event2: $5"; } |
+        sort -s -t']' -k1,1 > "$WORK/touch.log"
     got=$("$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log") || return 1
     [ "$got" = "$(printf "$4")" ] || { printf 'got:\n%s\n' "$got"; return 1; }
 }
@@ -357,6 +379,14 @@ check 'a key pressed during a passthrough lifts the passed fingers there and the
 { touches '0 0=500,200\n20 0=510,200\n60 0=530,200\n100 -0\n'; keys '50 KEY_LEFTSHIFT DOWN\n'; } | sort -s -t']' -k1,1 > "$WORK/k.log"
 check 'a modifier pressed during a passthrough leaves the touch to the ROM' \
     sh -c '[ "$("$1" replay "$2" "$3" | tail -n 1)" = "100 pass EV_SYN SYN_REPORT 00000000" ]' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/k.log"
+
+# The daemon gives the keys held on the keyboard (HELD SCANCODE...) when it opens it, after its
+# SYN_DROPPED, and with none when it loses it.
+check 'a modifier release lost with the keyboard is cleared by HELD' replays_keys "$MODS$SWIPES" \
+    "$(stroke 500 600 100,200 163,200)600 -0\n" '0 KEY_LEFTSHIFT DOWN\n' '570 1-finger swipe right key 0x4\n' HELD
+# (The HELD line at 100 ms is the first event, so times count from it.)
+check 'a modifier already held when the keyboard is opened is added' replays_keys "$MODS$SWIPES" \
+    "$(stroke 500 600 100,200 163,200)600 -0\n" '' '470 1-finger swipe right key 0x4 shift\n' 'HELD 42'
 
 # Device recordings: the finger counts must come out right, including the third finger that
 # landed 122 ms after the first. Taps are made easy here so that every touch reports its count.

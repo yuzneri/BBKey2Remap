@@ -21,14 +21,16 @@ if [ -z "$NDK" ] || ! is_pinned "$NDK"; then
     NDK=$CACHE/android-ndk-$NDK_RELEASE
     if ! is_pinned "$NDK"; then
         mkdir -p "$CACHE"
-        zip=$CACHE/android-ndk-$NDK_RELEASE-linux.zip
-        curl -fsS --max-time 1200 -o "$zip.tmp" "https://dl.google.com/android/repository/android-ndk-$NDK_RELEASE-linux.zip"
-        echo "$NDK_SHA1  $zip.tmp" | sha1sum -c - >/dev/null
-        mv "$zip.tmp" "$zip"
-        rm -rf "$NDK"
+        # Everything happens in a private directory and the finished NDK is moved into place, so
+        # an interrupted or concurrent run never leaves a half-unpacked NDK at $NDK.
+        WORK=$(mktemp -d "$CACHE/.unpack.XXXXXX")
+        trap 'rm -rf "$WORK"' EXIT
+        curl -fsS --retry 3 --max-time 1200 -o "$WORK/ndk.zip" \
+            "https://dl.google.com/android/repository/android-ndk-$NDK_RELEASE-linux.zip"
+        echo "$NDK_SHA1  $WORK/ndk.zip" | sha1sum -c - >/dev/null
         # python3 rather than unzip, which build hosts may lack; the NDK needs its file modes and
         # symlinks, which zipfile.extractall drops.
-        python3 -I - "$zip" "$CACHE" <<'EOF'
+        python3 -I - "$WORK/ndk.zip" "$WORK" <<'EOF'
 import os, stat, sys, zipfile
 with zipfile.ZipFile(sys.argv[1]) as z:
     for i in z.infolist():
@@ -45,8 +47,11 @@ with zipfile.ZipFile(sys.argv[1]) as z:
                 out.write(src.read())
             os.chmod(dest, stat.S_IMODE(mode) or 0o644)
 EOF
-        rm "$zip"
-        is_pinned "$NDK" || { echo "NDK $NDK_RELEASE did not unpack as expected" >&2; exit 1; }
+        is_pinned "$WORK/android-ndk-$NDK_RELEASE" || { echo "NDK $NDK_RELEASE did not unpack as expected" >&2; exit 1; }
+        if ! is_pinned "$NDK"; then
+            rm -rf "$NDK"
+            mv "$WORK/android-ndk-$NDK_RELEASE" "$NDK"
+        fi
     fi
 fi
 

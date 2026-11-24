@@ -357,6 +357,42 @@ void tg_key_event(struct tg_state *st, const struct tg_event *ev)
     if (!modifier) st->last_key_us = ev->t_us;
 }
 
+void tg_resync(struct tg_state *st, int64_t t_us, int nslots, const int32_t *ids, const int32_t *xs,
+               const int32_t *ys, int current_slot)
+{
+    struct tg_event ev = { .t_us = t_us, .type = EV_ABS };
+    struct tg_event syn = { .t_us = t_us, .type = EV_SYN, .code = SYN_REPORT };
+    /* Whatever the touch was, it continued unseen: abandon it, as for SYN_DROPPED. Fingers that
+     * are down now stay ignored until lifted, since where they started is unknown. */
+    if (st->phase == TG_PASS) release_passthrough(st, t_us);
+    st->phase = TG_DONE;
+    st->buf_len = 0;
+    st->dropping = false;
+    for (int s = 0; s < nslots && s < TG_SLOTS; s++) {
+        ev.code = ABS_MT_SLOT, ev.value = s;
+        tg_touch_event(st, &ev);
+        ev.code = ABS_MT_TRACKING_ID, ev.value = ids[s];
+        tg_touch_event(st, &ev);
+        if (ids[s] < 0) continue;
+        ev.code = ABS_MT_POSITION_X, ev.value = xs[s];
+        tg_touch_event(st, &ev);
+        ev.code = ABS_MT_POSITION_Y, ev.value = ys[s];
+        tg_touch_event(st, &ev);
+    }
+    ev.code = ABS_MT_SLOT, ev.value = current_slot;
+    tg_touch_event(st, &ev);
+    tg_touch_event(st, &syn);
+}
+
+void tg_set_held_keys(struct tg_state *st, const uint8_t *bits, size_t nbytes)
+{
+    st->mods_down = 0;
+    for (int i = 0; bits && i < st->cfg.nmods; i++) {
+        size_t code = st->cfg.mods[i].scancode;
+        if (code / 8 < nbytes && (bits[code / 8] >> (code % 8)) & 1) st->mods_down |= 1u << i;
+    }
+}
+
 int64_t tg_next_deadline(const struct tg_state *st)
 {
     if (st->phase == TG_GATHER) return st->t0 + MS(st->cfg.gather_ms);

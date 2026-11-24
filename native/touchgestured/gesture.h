@@ -9,6 +9,7 @@
 #include "config.h"
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define TG_SLOTS 16
@@ -76,11 +77,24 @@ void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_
 
 /*
  * Feeds one event of touch_keypad; time is first advanced to the event's timestamp. SYN_DROPPED
- * abandons the current touch, and events up to the next SYN_REPORT are not used. After that
- * SYN_REPORT the caller should feed the device's current state read from the kernel: every slot's
- * ABS_MT_TRACKING_ID and position, then ABS_MT_SLOT of the current slot, then SYN_REPORT.
+ * abandons the current touch and ignores events up to the next SYN_REPORT; the caller should then
+ * discard the events still queued, which are older than the kernel's state, and call tg_resync.
  */
 void tg_touch_event(struct tg_state *st, const struct tg_event *ev);
+
+/*
+ * Replaces the fingers with the kernel's current state (EVIOCGMTSLOTS): ids[s] is slot s's
+ * tracking id (-1 for none) and xs[s], ys[s] its position, for nslots slots; current_slot is the
+ * device's ABS_MT_SLOT. Fingers down across the gap are ignored until lifted.
+ */
+void tg_resync(struct tg_state *st, int64_t t_us, int nslots, const int32_t *ids, const int32_t *xs,
+               const int32_t *ys, int current_slot);
+
+/*
+ * Sets which physical modifiers are held from the keyboard's key bitmap (EVIOCGKEY; bit n is key
+ * n, nbytes long), for when its events may have been missed. NULL means none is held.
+ */
+void tg_set_held_keys(struct tg_state *st, const uint8_t *bits, size_t nbytes);
 
 /*
  * Feeds one EV_KEY event of the keyboard (stmpe_keypad); other events are ignored. Fingers on the

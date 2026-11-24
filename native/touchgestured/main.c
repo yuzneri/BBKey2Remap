@@ -6,6 +6,7 @@
  * and writes to two uinput devices: a keyboard for gesture keys and, when a finger count is passed
  * through, a touchpad with the same axes as the surface for the ROM's own handling.
  */
+#define _GNU_SOURCE /* ppoll in glibc; bionic has it anyway */
 #include "config.h"
 #include "gesture.h"
 
@@ -39,7 +40,7 @@ struct daemon {
     const char *touch_name, *keys_name;
     int touch_fd, keys_fd, kbd_fd, pad_fd;
     bool passes;             /* some finger count is passed through to the virtual touchpad */
-    bool resync_after_frame; /* SYN_DROPPED seen: reread the slots after the device's next SYN_REPORT */
+    bool ready;              /* st is set up (on the first opening of the surface) */
 };
 
 static void on_signal(int sig) { (void)sig; stopping = 1; }
@@ -186,17 +187,8 @@ static void pass_event(void *ctx, const struct tg_event *ev)
     if (d->pad_fd >= 0) emit_event(d->pad_fd, ev->type, ev->code, ev->value);
 }
 
-static void feed_touch(struct daemon *d, uint16_t type, uint16_t code, int32_t value)
-{
-    struct tg_event ev = { .t_us = now_us(), .type = type, .code = code, .value = value };
-    tg_touch_event(&d->st, &ev);
-}
-
-/*
- * Tells the recogniser the surface's current fingers, read from the kernel: at start, after
- * SYN_DROPPED and after reopening. The leading SYN_REPORT ends the recogniser's dropped state.
- */
-static void resync(struct daemon *d)
+/* Gives the recogniser the surface's current fingers, read from the kernel. */
+static void resync_touch(struct daemon *d)
 {
     struct input_absinfo slot_info;
     if (ioctl(d->touch_fd, EVIOCGABS(ABS_MT_SLOT), &slot_info) < 0) {
@@ -212,18 +204,22 @@ static void resync(struct daemon *d)
         fprintf(stderr, "touchgestured: reading the slots: %s\n", strerror(errno));
         return;
     }
-    feed_touch(d, EV_SYN, SYN_REPORT, 0);
-    for (int s = 0; s < slots; s++) {
-        feed_touch(d, EV_ABS, ABS_MT_SLOT, s);
-        feed_touch(d, EV_ABS, ABS_MT_TRACKING_ID, id.values[s]);
-        if (id.values[s] < 0) continue;
-        feed_touch(d, EV_ABS, ABS_MT_POSITION_X, x.values[s]);
-        feed_touch(d, EV_ABS, ABS_MT_POSITION_Y, y.values[s]);
-    }
-    feed_touch(d, EV_ABS, ABS_MT_SLOT, slot_info.value);
-    feed_touch(d, EV_SYN, SYN_REPORT, 0);
+    tg_resync(&d->st, now_us(), slots, id.values, x.values, y.values, slot_info.value);
 }
 
+/* Gives the recogniser the keys held on the keyboard, read from the kernel. */
+static void resync_keys(struct daemon *d)
+{
+    uint8_t bits[KEY_CNT / 8 + 1] = { 0 };
+    if (ioctl(d->keys_fd, EVIOCGKEY(sizeof bits), bits) < 0) {
+        fprintf(stderr, "touchgestured: reading the held keys: %s\n", strerror(errno));
+        tg_set_held_keys(&d->st, NULL, 0);
+        return;
+    }
+    tg_set_held_keys(&d->st, bits, sizeof bits);
+}
+
+/* Opens the surface; the recogniser is set up on the first success and kept across reopening. */
 static int open_touch(struct daemon *d)
 {
     d->touch_fd = open_by_name(d->touch_name);
@@ -240,10 +236,19 @@ static int open_touch(struct daemon *d)
         d->touch_fd = -1;
         return -1;
     }
-    struct tg_sink sink = { .ctx = d, .key = send_key, .pass = pass_event };
-    tg_init(&d->st, &d->cfg, x.resolution, &sink);
-    resync(d);
+    if (!d->ready) {
+        struct tg_sink sink = { .ctx = d, .key = send_key, .pass = pass_event };
+        tg_init(&d->st, &d->cfg, x.resolution, &sink);
+        d->ready = true;
+    }
+    resync_touch(d);
     return 0;
+}
+
+static void open_keys(struct daemon *d)
+{
+    d->keys_fd = open_by_name(d->keys_name);
+    if (d->keys_fd >= 0) resync_keys(d);
 }
 
 /* Drops a device that failed to read; the main loop reopens it. */
@@ -255,30 +260,69 @@ static void lose(struct daemon *d, int *fd, const char *name)
     if (fd == &d->touch_fd) {
         struct tg_event drop = { .t_us = now_us(), .type = EV_SYN, .code = SYN_DROPPED };
         tg_touch_event(&d->st, &drop);
+    } else {
+        tg_set_held_keys(&d->st, NULL, 0);
     }
 }
 
-static void read_events(struct daemon *d, int *fd, const char *name)
+#define BATCH 256
+
+/* Events read from one device and not yet given to the recogniser. */
+struct batch {
+    struct tg_event ev[BATCH];
+    int n, next;
+};
+
+/* Reads what is queued on *fd, up to BATCH events; a failed device is dropped. */
+static void fill(struct daemon *d, int *fd, const char *name, struct batch *b)
 {
-    struct input_event evs[64];
-    for (;;) {
-        ssize_t n = read(*fd, evs, sizeof evs);
-        if (n < 0 && (errno == EAGAIN || errno == EINTR)) return;
-        if (n <= 0) { lose(d, fd, name); return; }
-        for (size_t i = 0; i < (size_t)n / sizeof *evs; i++) {
-            struct tg_event ev = {
-                .t_us = (int64_t)evs[i].input_event_sec * 1000000 + evs[i].input_event_usec,
-                .type = evs[i].type, .code = evs[i].code, .value = evs[i].value,
+    b->n = b->next = 0;
+    while (*fd >= 0 && b->n < BATCH) {
+        struct input_event raw[64];
+        size_t want = (size_t)(BATCH - b->n) < 64 ? (size_t)(BATCH - b->n) : 64;
+        ssize_t got = read(*fd, raw, want * sizeof *raw);
+        if (got < 0 && (errno == EAGAIN || errno == EINTR)) return;
+        if (got <= 0) { lose(d, fd, name); return; }
+        for (size_t i = 0; i < (size_t)got / sizeof *raw; i++)
+            b->ev[b->n++] = (struct tg_event){
+                .t_us = (int64_t)raw[i].input_event_sec * 1000000 + raw[i].input_event_usec,
+                .type = raw[i].type, .code = raw[i].code, .value = raw[i].value,
             };
-            if (fd == &d->keys_fd) {
-                tg_key_event(&d->st, &ev);
-                continue;
+    }
+}
+
+/*
+ * After SYN_DROPPED the events still queued are older than what the kernel reports now, so they
+ * are thrown away and the state is read instead.
+ */
+static void discard_queued(int fd, struct batch *b)
+{
+    struct input_event raw[64];
+    while (read(fd, raw, sizeof raw) > 0) {}
+    b->next = b->n;
+}
+
+/* Gives the recogniser the events of both devices in time order, as the tests replay them. */
+static void dispatch(struct daemon *d, struct batch *touch, struct batch *keys)
+{
+    while (touch->next < touch->n || keys->next < keys->n) {
+        bool from_keys = touch->next == touch->n ||
+                         (keys->next < keys->n && keys->ev[keys->next].t_us <= touch->ev[touch->next].t_us);
+        struct batch *b = from_keys ? keys : touch;
+        const struct tg_event *ev = &b->ev[b->next++];
+        bool dropped = ev->type == EV_SYN && ev->code == SYN_DROPPED;
+        if (from_keys) {
+            if (!dropped) {
+                tg_key_event(&d->st, ev);
+            } else if (d->keys_fd >= 0) {
+                discard_queued(d->keys_fd, keys);
+                resync_keys(d);
             }
-            tg_touch_event(&d->st, &ev);
-            if (ev.type == EV_SYN && ev.code == SYN_DROPPED) d->resync_after_frame = true;
-            else if (ev.type == EV_SYN && ev.code == SYN_REPORT && d->resync_after_frame) {
-                d->resync_after_frame = false;
-                resync(d);
+        } else {
+            tg_touch_event(&d->st, ev);
+            if (dropped && d->touch_fd >= 0) {
+                discard_queued(d->touch_fd, touch);
+                resync_touch(d);
             }
         }
     }
@@ -297,8 +341,9 @@ static int load_config(const char *path, struct tg_config *cfg)
 
 int main(int argc, char **argv)
 {
-    struct daemon d = { .touch_name = "touch_keypad", .keys_name = "stmpe_keypad",
-                        .touch_fd = -1, .keys_fd = -1, .kbd_fd = -1, .pad_fd = -1 };
+    static struct daemon d = { .touch_name = "touch_keypad", .keys_name = "stmpe_keypad",
+                               .touch_fd = -1, .keys_fd = -1, .kbd_fd = -1, .pad_fd = -1 };
+    static struct batch touch, keys;
     if (argc < 2 || argc % 2) goto usage;
     for (int i = 2; i < argc; i += 2) {
         if (!strcmp(argv[i], "--touch")) d.touch_name = argv[i + 1];
@@ -307,6 +352,14 @@ int main(int argc, char **argv)
     }
     if (load_config(argv[1], &d.cfg)) return 2;
 
+    /* The signals stay blocked except inside ppoll, so one arriving just before it is not left
+     * waiting for the next input. */
+    sigset_t blocked, waiting;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGTERM);
+    sigaddset(&blocked, SIGINT);
+    sigaddset(&blocked, SIGHUP);
+    sigprocmask(SIG_BLOCK, &blocked, &waiting);
     struct sigaction sa = { .sa_handler = on_signal };
     sigaction(SIGTERM, &sa, NULL);
     sigaction(SIGINT, &sa, NULL);
@@ -320,25 +373,30 @@ int main(int argc, char **argv)
     while (!stopping) {
         if (now_us() >= retry_at && (d.touch_fd < 0 || d.keys_fd < 0)) {
             if (d.touch_fd < 0) open_touch(&d);
-            if (d.keys_fd < 0) d.keys_fd = open_by_name(d.keys_name);
+            /* Key events need the recogniser, which the surface's resolution sets up. */
+            if (d.ready && d.keys_fd < 0) open_keys(&d);
             retry_at = now_us() + RETRY_MS * 1000LL;
         }
         struct pollfd fds[2] = { { .fd = d.touch_fd, .events = POLLIN }, { .fd = d.keys_fd, .events = POLLIN } };
         int64_t wake = d.touch_fd >= 0 ? tg_next_deadline(&d.st) : INT64_MAX;
         if (d.touch_fd < 0 || d.keys_fd < 0) wake = wake < retry_at ? wake : retry_at;
-        int timeout = -1;
+        struct timespec timeout, *tp = NULL;
         if (wake != INT64_MAX) {
-            int64_t ms = (wake - now_us() + 999) / 1000;
-            timeout = ms < 0 ? 0 : ms > 60000 ? 60000 : (int)ms;
+            int64_t us = wake - now_us();
+            us = us < 0 ? 0 : us > 60000000 ? 60000000 : us;
+            timeout = (struct timespec){ .tv_sec = us / 1000000, .tv_nsec = us % 1000000 * 1000 };
+            tp = &timeout;
         }
-        if (poll(fds, 2, timeout) < 0 && errno != EINTR) {
-            fprintf(stderr, "touchgestured: poll: %s\n", strerror(errno));
+        if (ppoll(fds, 2, tp, &waiting) < 0 && errno != EINTR) {
+            fprintf(stderr, "touchgestured: ppoll: %s\n", strerror(errno));
             break;
         }
-        if (d.touch_fd >= 0 && fds[0].revents) read_events(&d, &d.touch_fd, d.touch_name);
-        if (d.keys_fd >= 0 && fds[1].revents) read_events(&d, &d.keys_fd, d.keys_name);
+        touch.n = touch.next = keys.n = keys.next = 0;
+        if (d.touch_fd >= 0 && fds[0].revents) fill(&d, &d.touch_fd, d.touch_name, &touch);
+        if (d.keys_fd >= 0 && fds[1].revents) fill(&d, &d.keys_fd, d.keys_name, &keys);
+        dispatch(&d, &touch, &keys);
         /* After the events, which carry earlier times, so deadlines are not taken out of order. */
-        if (d.touch_fd >= 0) tg_advance(&d.st, now_us());
+        if (d.ready) tg_advance(&d.st, now_us());
     }
     destroy_device(&d.pad_fd);
     destroy_device(&d.kbd_fd);
