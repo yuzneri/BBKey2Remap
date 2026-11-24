@@ -34,12 +34,13 @@ static uint8_t held_mods(const struct tg_state *st)
 }
 
 /*
- * The layer whose binding gesture G of FINGERS uses now: the first held layer, in tg_layer order,
- * that binds it, otherwise the base layer.
+ * The layer whose binding gesture G of FINGERS uses: the first layer, in tg_layer order, whose
+ * modifier was held during the touch and that binds it, otherwise the base layer. A modifier let go
+ * just before the finger still counts, as it naturally is when ending a gesture.
  */
 static enum tg_layer layer_of(const struct tg_state *st, int fingers, enum tg_gesture g)
 {
-    uint8_t held = held_mods(st);
+    uint8_t held = st->layer_mods | held_mods(st);
     for (int l = TG_LAYER_SHIFT; l < TG_LAYER_COUNT; l++)
         if ((held & tg_layer_mod(l)) && st->cfg.bind[l][fingers - 1][g].scancode) return l;
     return TG_LAYER_BASE;
@@ -210,6 +211,7 @@ static void begin_touch(struct tg_state *st, int active)
     st->ax = st->ay = 0;
     st->max_d2 = 0;
     st->t_move = st->now;
+    st->layer_mods = held_mods(st);
     st->max_active = active;
     st->fingers = 0;
     st->swiping = st->committed = false;
@@ -355,7 +357,10 @@ void tg_key_event(struct tg_state *st, const struct tg_event *ev)
     tg_advance(st, ev->t_us);
     if (ev->type != EV_KEY) return;
     int mod = modifier_index(st, ev->code);
-    if (mod >= 0 && ev->value == 1) st->mods_down |= 1u << mod;
+    if (mod >= 0 && ev->value == 1) {
+        st->mods_down |= 1u << mod;
+        st->layer_mods |= st->cfg.mods[mod].mod;
+    }
     if (mod >= 0 && ev->value == 0) st->mods_down &= ~(1u << mod);
     if (ev->value != 1) return; /* releases and autorepeat change nothing else */
     bool modifier = mod >= 0;

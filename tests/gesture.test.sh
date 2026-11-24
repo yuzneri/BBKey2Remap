@@ -67,6 +67,8 @@ check 'SYM cannot be sent with a key' rejects 'bind 1 tap key 1 sym\n' 'modifier
 check 'a layer binding conflicts with passthrough of its finger count' rejects 'pass 1\nbind alt 1 tap key 1\n' \
     '1-finger gestures are both passed through and bound'
 check 'an unknown layer is rejected' rejects 'bind meta 1 tap key 1\n' 'finger count must be 1-3'
+check 'passthrough after a layer binding of its finger count is rejected at the pass line' rejects \
+    'bind alt 1 tap key 1\npass 1\n' '2: 1-finger gestures are both passed through and bound'
 check 'a physical key with two modifiers is rejected' rejects 'mod 42 shift\nmod 42 ctrl\n' 'scancode 42 has two modifiers'
 long=$(printf '%0300d' 0)
 check 'overlong lines are rejected' rejects "# $long\n" 'longer than 256'
@@ -448,6 +450,25 @@ check 'the Speed key as Ctrl selects the ctrl layer' replays_keys "${LMODS}${SWI
 check 'a flick bound only in a layer is recognised while its modifier is held' replays_keys \
     "${LMODS}${SWIPES}bind shift 1 flick up key 0x45\n" "$(stroke 10 50 500,250 500,40)50 -0\n" '0 KEY_LEFTSHIFT DOWN\n' \
     '50 1-finger flick up key 0x45\n'
+# The layer is the one of the modifiers held when the touch starts: letting go of the modifier just
+# before the finger is a natural way to end a gesture.
+check 'a modifier released just before the lift keeps its layer for a flick' replays_keys \
+    "${LMODS}${SWIPES}bind shift 1 flick up key 0x45\n" "$(stroke 10 50 500,250 500,40)50 -0\n" \
+    '0 KEY_LEFTSHIFT DOWN\n45 KEY_LEFTSHIFT UP\n' '50 1-finger flick up key 0x45\n'
+check 'a modifier released just before the lift keeps its layer for a tap' replays_keys "${LMODS}${TAPS}bind shift 1 tap key 0x50\n" \
+    '10 0=500,200\n60 -0\n' '0 KEY_LEFTSHIFT DOWN\n55 KEY_LEFTSHIFT UP\n' '60 1-finger tap key 0x50\n'
+check 'a modifier released during a swipe keeps its layer' replays_keys \
+    "${LMODS}${SWIPES}bind shift 1 swipe right key 0x40\n" "$(stroke 10 410 100,200 310,200)410 -0\n" \
+    '0 KEY_LEFTSHIFT DOWN\n200 KEY_LEFTSHIFT UP\n' \
+    '90 1-finger swipe right key 0x40\n210 1-finger swipe right key 0x40\n330 1-finger swipe right key 0x40\n'
+# Paths where the base layer has nothing for the gesture. (The 1-finger swipe lifts at 110 ms, before
+# gather_ms ends, so its key comes then rather than at 80 ms as without the wait.)
+check 'a finger count bound only in a layer is counted while its modifier is held' replays_keys "${LMODS}bind shift 2 tap key 0x50\n" \
+    '10 0=300,200 1=700,200\n100 -0 -1\n' '0 KEY_LEFTSHIFT DOWN\n' '100 2-finger tap key 0x50\n'
+check 'an axis bound only in a layer can start a swipe' replays_keys "${LMODS}bind alt 1 swipe right key 0x41\n" \
+    "$RIGHT" '0 KEY_LEFTALT DOWN\n' '80 1-finger swipe right key 0x41\n'
+check 'more fingers bound only in the held layer make a swipe wait for gather_ms' replays_keys "${LMODS}${SWIPES}bind shift 2 tap key 0x50\n" \
+    "$RIGHT" '0 KEY_LEFTSHIFT DOWN\n' '110 1-finger swipe right key 0x4 shift\n'
 check 'without the modifier the same movement is a swipe' replays_keys \
     "${LMODS}${SWIPES}bind shift 1 flick up key 0x45\n" "$(stroke 10 50 500,250 500,40)50 -0\n" '0 KEY_LEFTSHIFT DOWN\n0 KEY_LEFTSHIFT UP\n' \
     '20 1-finger swipe up key 0x1\n30 1-finger swipe up key 0x1\n50 1-finger swipe up key 0x1\n'

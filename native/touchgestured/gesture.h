@@ -69,6 +69,7 @@ struct tg_state {
     bool dropping;           /* after SYN_DROPPED, until the next SYN_REPORT */
     int64_t last_key_us;     /* last press of a key other than a modifier */
     uint32_t mods_down;      /* bit i: the physical key cfg.mods[i] is held */
+    uint8_t layer_mods;      /* TG_MOD_* held at any time during the touch, which choose its layers */
 };
 
 /* Starts with no fingers down. units_per_mm is the resolution of the X and Y axes. */

@@ -317,4 +317,6 @@ test('modifier key roles decide which layers can be pressed, and losing one is w
   const fine = KCM.roleWarnings({ scan: '110', code: 'META_LEFT', base: { ...base, 110: 'CTRL_LEFT' }, map: {} });
   assert.match(fine.join('\n'), /Ctrlを押せるキーがなくなります/);
   assert.equal(KCM.roleWarnings({ scan: '42', code: 'SHIFT_RIGHT', base, map: {} }).length, 1, 'only the general notice');
+  const sym = KCM.roleWarnings({ scan: '100', code: 'CTRL_RIGHT', base, map: { 'tp:sym_1_tap': 'ENTER', 'tp:shift_1_tap': 'TAB' } });
+  assert.match(sym.join('\n'), /押せなくなるレイヤーに1件の割り当てがあります（SYM＋1本指でタップ）/, sym.join('\n'));
 });

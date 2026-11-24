@@ -612,8 +612,11 @@
     const after = availableFromRoles(rolesOf(base, { ...map, ['kl:' + scan]: code }));
     const lost = ['shift', 'alt', 'ctrl', 'meta', 'sym', 'fn'].filter((g) => before.has(g) && !after.has(g));
     if (lost.length) out.push(`${lost.map(modifierLabel).join('、')}を押せるキーがなくなります。`);
-    const stranded = Object.keys(map).filter((id) => !id.startsWith('kl:') && !id.startsWith('tp:') &&
-      unreachableParts(id.split(':')[0], after).length > 0 && unreachableParts(id.split(':')[0], before).length === 0);
+    // Gesture keys of a lost modifier's layer are stranded too ("tp:sym_1_tap").
+    const lostLayer = (id) => { const m = /^tp:(shift|alt|ctrl|sym)_[123]_/.exec(id); return !!m && lost.includes(m[1]); };
+    const stranded = Object.keys(map).filter((id) => (id.startsWith('tp:') ? lostLayer(id) : !id.startsWith('kl:') &&
+      unreachableParts(id.split(':')[0], after).length > 0 && unreachableParts(id.split(':')[0], before).length === 0))
+      .map((id) => (id.startsWith('tp:') ? gestureName(id) : id));
     if (stranded.length) out.push(`押せなくなるレイヤーに${stranded.length}件の割り当てがあります（${stranded.slice(0, 3).join('、')}${stranded.length > 3 ? 'など' : ''}）。`);
     return out;
   }

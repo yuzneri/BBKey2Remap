@@ -104,8 +104,9 @@ write_configs() {
 # TP_CONFIG. Ranges, modifier names and key code labels are checked on the generated files.
 check_touch() {
     id=${1%%=*} value=${1#*=}
+    # Only gesture keys may have a layer prefix; thresholds and passthrough are matched as they are.
     gesture=$id
-    case "$id" in shift_*|alt_*|ctrl_*|sym_*) gesture=${id#*_} ;; esac
+    case "$id" in shift_[123]_*|alt_[123]_*|ctrl_[123]_*|sym_[123]_*) gesture=${id#*_} ;; esac
     case "$gesture" in
         start_mm|step_mm|flick_mm_s|tap_ms|hold_ms|gather_ms|after_key_ms)
             # The same grammar as the WebUI's (kcm.js): up to 5 digits, optionally "." and up to 6 more.

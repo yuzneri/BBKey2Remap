@@ -307,6 +307,23 @@ layered_gestures() {
         [ "$(remap read | grep '^tp:' | sort | tr '\n' ' ')" = 'tp:1_swipe_left=DPAD_LEFT tp:mode=gesture tp:shift_1_swipe_left=MOVE_HOME tp:sym_3_tap=ENTER+ctrl ' ]
 }
 check 'gestures of modifier layers get their own scan codes, the last ones above the gamepad range' layered_gestures
+every_scan_code() {
+    set -f
+    ids=$(for l in '' shift_ alt_ ctrl_ sym_; do for f in 1 2 3; do
+        for g in swipe_up swipe_down swipe_left swipe_right flick_up flick_down flick_left flick_right \
+            flick_upleft flick_upright flick_downleft flick_downright tap; do echo "tp:$l${f}_$g=ENTER"; done; done; done)
+    out=$(remap save tp:mode=gesture $ids 2>&1); rc=$?; set +f
+    [ "$rc" -eq 0 ] || { echo "$out"; return 1; }
+    sed -n 's/^bind .* key \([0-9]*\).*$/\1/p' "$DST_TG_CONF" > "$WORK/codes"
+    [ "$(wc -l < "$WORK/codes")" -eq 195 ] && [ "$(sort -u "$WORK/codes" | wc -l)" -eq 195 ] &&
+        ! awk '$1 >= 704 && $1 <= 743 || $1 > 767 || $1 < 512 { bad = 1 } END { exit !bad }' "$WORK/codes" &&
+        grep -qx 703 "$WORK/codes" && grep -qx 744 "$WORK/codes" && grep -qx 746 "$WORK/codes" &&
+        "$GESTURETOOL" check "$DST_TG_CONF" >/dev/null && "$KLTOOL" check "$DST_TG_KL" >/dev/null
+}
+check 'all 195 gestures of all layers get distinct scan codes below KEY_MAX, clear of the gamepad buttons' every_scan_code
+for bad in tp:shift_step_mm=3 tp:alt_tap_ms=100; do
+    check "a threshold cannot have a layer: $bad" refused 'タッチ操作の設定が正しくありません' remap save "$bad"
+done
 check 'passthrough is not per layer' refused 'タッチ操作の設定が正しくありません' remap save tp:shift_1_pass=on
 check 'an unknown layer is refused' refused 'タッチ操作の設定が正しくありません' remap save tp:meta_1_tap=ENTER
 check 'a layer binding next to passthrough of its finger count is refused by the daemon check' refused \
