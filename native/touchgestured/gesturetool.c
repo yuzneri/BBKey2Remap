@@ -1,10 +1,12 @@
 /*
  * Host-side driver of the touchgestured recogniser, for tests and for replaying device logs.
  *   gesturetool check CONFIG    validate a settings file; prints the effective settings
- *   gesturetool replay CONFIG LOG [--resolution UNITS_PER_MM] [--touch DEVICE]
+ *   gesturetool replay CONFIG LOG [--resolution UNITS_PER_MM] [--touch DEVICE] [--keys DEVICE]
  *       feed a `getevent -lt` capture to the recogniser and print one line per key:
  *       "MS FINGERS-finger GESTURE key SCANCODE [MODIFIERS]", MS counted from the first event.
- *       Lines with a device prefix are used only when it is DEVICE (default /dev/input/event1).
+ *       Lines without a device prefix are touch events. Prefixed lines are touch events when the
+ *       prefix is the --touch DEVICE (default /dev/input/event1), keyboard events when it is the
+ *       --keys DEVICE (default /dev/input/event2), and skipped otherwise.
  *       Events passed through to the virtual touchpad print as "MS pass TYPE CODE VALUE" with
  *       their original time and getevent's names and hexadecimal values.
  */
@@ -27,7 +29,9 @@ static const struct name { const char *name; int value; } TYPES[] = {
     NAME(ABS_MT_WIDTH_MINOR), NAME(ABS_MT_ORIENTATION), NAME(ABS_MT_POSITION_X), NAME(ABS_MT_POSITION_Y),
     NAME(ABS_MT_TOOL_TYPE), NAME(ABS_MT_TRACKING_ID), NAME(ABS_MT_PRESSURE), NAME(ABS_MT_DISTANCE),
     NAME(BTN_TOUCH), NAME(BTN_TOOL_FINGER), NAME(BTN_TOOL_DOUBLETAP), NAME(BTN_TOOL_TRIPLETAP),
-    NAME(BTN_TOOL_QUADTAP), NAME(BTN_TOOL_QUINTTAP),
+    NAME(BTN_TOOL_QUADTAP), NAME(BTN_TOOL_QUINTTAP), NAME(MSC_SCAN),
+}, KEYS[] = {
+#include "keynames.inc"
 }, VALUES[] = { { "UP", 0 }, { "DOWN", 1 }, { "REPEAT", 2 } };
 
 /* Looks NAME up in a table, or reads it as the hexadecimal number getevent prints otherwise. */
@@ -107,12 +111,15 @@ static void print_pass(void *ctx, const struct tg_event *ev)
     else printf("%08x\n", (uint32_t)ev->value);
 }
 
+enum source { SKIP, FROM_TOUCH, FROM_KEYS };
+
 /*
  * Parses "[   77941.651292] EV_ABS ABS_MT_POSITION_X 0000030f", optionally with "/dev/input/eventN: "
- * after the timestamp. Returns 1 for an event, 0 for a line to skip, -1 for a malformed event line.
+ * after the timestamp. Returns the event's source, SKIP for a line to skip, -1 for a malformed line.
  */
-static int parse_line(char *line, const char *touch, struct tg_event *ev)
+static int parse_line(char *line, const char *touch, const char *keys, struct tg_event *ev)
 {
+    enum source src = FROM_TOUCH;
     long sec, usec, type, code, value;
     int n = 0;
     if (sscanf(line, " [ %ld.%6ld]%n", &sec, &usec, &n) != 2 || !n) return 0;
@@ -124,18 +131,19 @@ static int parse_line(char *line, const char *touch, struct tg_event *ev)
     if (ntok && tok[0][0] == '/') {
         size_t len = strlen(tok[0]);
         if (tok[0][len - 1] == ':') tok[0][len - 1] = '\0';
-        if (strcmp(tok[0], touch)) return 0;
+        if (!strcmp(tok[0], keys)) src = FROM_KEYS;
+        else if (strcmp(tok[0], touch)) return SKIP;
         f++;
         ntok--;
     }
-    if (ntok != 3 || !LOOKUP(TYPES, f[0], &type) || !LOOKUP(CODES, f[1], &code) ||
+    if (ntok != 3 || !LOOKUP(TYPES, f[0], &type) || !(LOOKUP(CODES, f[1], &code) || LOOKUP(KEYS, f[1], &code)) ||
         !LOOKUP(VALUES, f[2], &value))
         return -1;
     *ev = (struct tg_event){ .t_us = sec * 1000000 + usec, .type = (uint16_t)type, .code = (uint16_t)code, .value = (int32_t)value };
-    return 1;
+    return src;
 }
 
-static int replay(const struct tg_config *cfg, const char *path, double resolution, const char *touch)
+static int replay(const struct tg_config *cfg, const char *path, double resolution, const char *touch, const char *keys)
 {
     FILE *in = fopen(path, "r");
     if (!in) { perror(path); return 1; }
@@ -146,11 +154,12 @@ static int replay(const struct tg_config *cfg, const char *path, double resoluti
     int64_t last = 0;
     for (int lineno = 1; fgets(line, sizeof line, in); lineno++) {
         struct tg_event ev;
-        int rc = parse_line(line, touch, &ev);
-        if (rc < 0) { fprintf(stderr, "%s:%d: not a getevent -lt event line\n", path, lineno); fclose(in); return 1; }
-        if (!rc) continue;
+        int src = parse_line(line, touch, keys, &ev);
+        if (src < 0) { fprintf(stderr, "%s:%d: not a getevent -lt event line\n", path, lineno); fclose(in); return 1; }
+        if (src == SKIP) continue;
         if (origin_us < 0) origin_us = ev.t_us;
-        tg_touch_event(&st, &ev);
+        if (src == FROM_KEYS) tg_key_event(&st, &ev);
+        else tg_touch_event(&st, &ev);
         last = ev.t_us;
     }
     fclose(in);
@@ -168,18 +177,19 @@ int main(int argc, char **argv)
     }
     if (argc >= 4 && !strcmp(argv[1], "replay")) {
         double resolution = 21;
-        const char *touch = "/dev/input/event1";
+        const char *touch = "/dev/input/event1", *keys = "/dev/input/event2";
         for (int i = 4; i < argc; i += 2) {
             if (i + 1 == argc) goto usage;
             if (!strcmp(argv[i], "--resolution")) resolution = atof(argv[i + 1]);
             else if (!strcmp(argv[i], "--touch")) touch = argv[i + 1];
+            else if (!strcmp(argv[i], "--keys")) keys = argv[i + 1];
             else goto usage;
         }
         if (resolution <= 0 || load(argv[2], &cfg)) return 1;
-        return replay(&cfg, argv[3], resolution, touch);
+        return replay(&cfg, argv[3], resolution, touch, keys);
     }
 usage:
     fprintf(stderr, "usage: gesturetool check CONFIG\n"
-                    "       gesturetool replay CONFIG LOG [--resolution UNITS_PER_MM] [--touch DEVICE]\n");
+                    "       gesturetool replay CONFIG LOG [--resolution UNITS_PER_MM] [--touch DEVICE] [--keys DEVICE]\n");
     return 2;
 }

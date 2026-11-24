@@ -119,13 +119,14 @@ check 'with gather_ms 0 the fingers are counted on the first frame' replays "gat
 check 'consecutive touches are recognised separately' replays "$TAPS" \
     '0 0=500,200\n100 -0\n300 0=300,200 1=700,200\n400 -0 -1\n' '100 1-finger tap key 0x1\n400 2-finger tap key 0x2\n'
 
-# stroke FROM TO X0,Y0 X1,Y1: script lines moving finger 0 in a straight line, a frame every 10 ms.
+# stroke FROM TO X0,Y0 X1,Y1 [SLOT]: script lines moving a finger (slot 0 by default) in a straight
+# line, a frame every 10 ms.
 stroke() {
-    awk -v a="$1" -v b="$2" -v p="$3" -v q="$4" 'BEGIN {
+    awk -v a="$1" -v b="$2" -v p="$3" -v q="$4" -v slot="${5:-0}" 'BEGIN {
         split(p, s, ","); split(q, e, ",")
         for (t = a; t <= b; t += 10) {
             f = b > a ? (t - a) / (b - a) : 1
-            printf "%d 0=%d,%d\\n", t, s[1] + (e[1] - s[1]) * f, s[2] + (e[2] - s[2]) * f
+            printf "%d %d=%d,%d\\n", t, slot, s[1] + (e[1] - s[1]) * f, s[2] + (e[2] - s[2]) * f
         }
     }'
 }
@@ -262,6 +263,46 @@ check 'device recording: every event of passed-through touches reaches the virtu
     [ "$("$1" replay "$2" "$3" | grep -vc "ABS_MT_SLOT 00000000$")" = "$(grep -vc "ABS_MT_SLOT *00000000$" "$3")" ]' \
     - "$GESTURETOOL" "$WORK/g.conf" "$FIXTURES/touch-swipes-1finger.getevent"
 
+# keys LINES: "MS KEY_NAME DOWN|UP|REPEAT" lines as getevent lines of the keyboard (/dev/input/event2).
+keys() {
+    printf "$1" | awk '{ printf "[%6d.%06d] /dev/input/event2: EV_KEY %s %s\n", 1000 + int($1 / 1000), ($1 % 1000) * 1000, $2, $3 }'
+}
+# replays_keys CONFIG SCRIPT KEYS EXPECTED: like replays, with keyboard events merged in by time.
+replays_keys() {
+    conf "$1"
+    { touches "$2"; keys "$3"; } | sort -s -t']' -k1,1 > "$WORK/touch.log"
+    got=$("$GESTURETOOL" replay "$WORK/g.conf" "$WORK/touch.log") || return 1
+    [ "$got" = "$(printf "$4")" ] || { printf 'got:\n%s\n' "$got"; return 1; }
+}
+
+MODS='mod 42 shift\nmod 29 ctrl\n'
+check 'a touch starting within after_key_ms of a key press is ignored' replays_keys "$MODS$TAPS" \
+    '100 0=500,200\n150 -0\n400 0=500,200\n450 -0\n' '0 KEY_H DOWN\n50 KEY_H UP\n' '450 1-finger tap key 0x1\n'
+check 'autorepeat is not a new key press' replays_keys "$MODS$TAPS" \
+    '450 0=500,200\n500 -0\n' '0 KEY_H DOWN\n400 KEY_H REPEAT\n' '500 1-finger tap key 0x1\n'
+check 'pressing a modifier key does not make later touches ignored' replays_keys "$MODS$TAPS" \
+    '100 0=500,200\n150 -0\n' '0 KEY_LEFTSHIFT DOWN\n20 KEY_LEFTSHIFT UP\n' '150 1-finger tap key 0x1\n'
+check 'a key pressed during a touch cancels it' replays_keys "$MODS$TAPS" \
+    '0 0=500,200\n100 -0\n' '50 KEY_H DOWN\n70 KEY_H UP\n' ''
+check 'a finger already on the surface when a modifier is pressed leaves the gesture' replays_keys "$MODS$SWIPES" \
+    "0 0=900,300\n$(stroke 300 800 100,200 310,200 1)800 -1\n900 -0\n" '30 KEY_LEFTSHIFT DOWN\n850 KEY_LEFTSHIFT UP\n' \
+    '400 1-finger swipe right key 0x4\n550 1-finger swipe right key 0x4\n700 1-finger swipe right key 0x4\n'
+check 'lifting the finger on a modifier does not end the new gesture' replays_keys "$MODS${SWIPES}bind 2 tap key 2\n" \
+    "0 0=900,300\n$(stroke 300 800 100,200 310,200 1 | sed 's/\\n320 /\\n320 -0 /')800 -1\n" '30 KEY_LEFTSHIFT DOWN\n310 KEY_LEFTSHIFT UP\n' \
+    '450 1-finger swipe right key 0x4\n550 1-finger swipe right key 0x4\n700 1-finger swipe right key 0x4\n'
+check 'a modifier pressed after swipe keys were sent ends that swipe' replays_keys "$MODS$SWIPES" \
+    "$(stroke 0 500 100,200 310,200)500 -0\n" '200 KEY_LEFTCTRL DOWN\n' '100 1-finger swipe right key 0x4\n'
+conf "pass 1\n$MODS"
+{ touches '0 0=500,200\n20 0=510,200\n60 0=530,200\n100 -0\n'; keys '50 KEY_H DOWN\n'; } | sort -s -t']' -k1,1 > "$WORK/k.log"
+{ printf '50 pass EV_ABS ABS_MT_SLOT 00000000\n50 pass EV_ABS ABS_MT_TRACKING_ID ffffffff\n'
+  for b in BTN_TOUCH BTN_TOOL_FINGER BTN_TOOL_DOUBLETAP BTN_TOOL_TRIPLETAP BTN_TOOL_QUADTAP; do echo "50 pass EV_KEY $b UP"; done
+  echo '50 pass EV_SYN SYN_REPORT 00000000'; } > "$WORK/k.expected"
+check 'a key pressed during a passthrough lifts the passed fingers there and then' \
+    sh -c '"$1" replay "$2" "$3" | tail -n 8 | diff "$4" -' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/k.log" "$WORK/k.expected"
+{ touches '0 0=500,200\n20 0=510,200\n60 0=530,200\n100 -0\n'; keys '50 KEY_LEFTSHIFT DOWN\n'; } | sort -s -t']' -k1,1 > "$WORK/k.log"
+check 'a modifier pressed during a passthrough leaves the touch to the ROM' \
+    sh -c '[ "$("$1" replay "$2" "$3" | tail -n 1)" = "100 pass EV_SYN SYN_REPORT 00000000" ]' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/k.log"
+
 # Device recordings: the finger counts must come out right, including the third finger that
 # landed 122 ms after the first. Taps are made easy here so that every touch reports its count.
 conf "tap_ms 600\nstart_mm 25\n$TAPS"
@@ -272,7 +313,7 @@ check 'device recording: a two-finger and a three-finger touch' sh -c '[ "$("$1"
 
 # replay input handling
 conf "$TAPS"
-printf 'add device 1: /dev/input/event1\n[    1.000000] /dev/input/event1: EV_ABS ABS_MT_TRACKING_ID 00000001\n[    1.000000] /dev/input/event2: EV_KEY KEY_A DOWN\n[    1.000000] /dev/input/event1: EV_ABS ABS_MT_POSITION_X 00000064\n[    1.000000] /dev/input/event1: EV_SYN SYN_REPORT 00000000\n[    1.050000] /dev/input/event1: EV_ABS ABS_MT_TRACKING_ID ffffffff\n[    1.050000] /dev/input/event1: EV_SYN SYN_REPORT 00000000\n' > "$WORK/prefixed.log"
+printf 'add device 1: /dev/input/event1\n[    1.000000] /dev/input/event1: EV_ABS ABS_MT_TRACKING_ID 00000001\n[    1.000000] /dev/input/event3: EV_KEY KEY_A DOWN\n[    1.000000] /dev/input/event1: EV_ABS ABS_MT_POSITION_X 00000064\n[    1.000000] /dev/input/event1: EV_SYN SYN_REPORT 00000000\n[    1.050000] /dev/input/event1: EV_ABS ABS_MT_TRACKING_ID ffffffff\n[    1.050000] /dev/input/event1: EV_SYN SYN_REPORT 00000000\n' > "$WORK/prefixed.log"
 check 'replay reads device-prefixed lines of the touch device and skips the rest' \
     sh -c '[ "$("$1" replay "$2" "$3")" = "50 1-finger tap key 0x1" ]' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/prefixed.log"
 printf '[    1.000000] EV_ABS ABS_MT_POSITION_X\n' > "$WORK/bad.log"

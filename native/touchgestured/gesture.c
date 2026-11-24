@@ -17,7 +17,11 @@ void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_
     st->cfg = *cfg;
     st->sink = *sink;
     st->units_per_mm = units_per_mm;
+    st->last_key_us = INT64_MIN / 2;
 }
+
+/* A finger on the surface that can take part in a gesture. */
+static bool usable(const struct tg_contact *c) { return c->active && c->has_pos && !c->on_key; }
 
 static bool any_bound(const struct tg_state *st, int fingers, int first, int last)
 {
@@ -159,7 +163,7 @@ static void count_fingers(struct tg_state *st)
         st->phase = TG_DONE;
         return;
     }
-    for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = st->c[s].active;
+    for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = usable(&st->c[s]);
     st->phase = TG_TRACK;
 }
 
@@ -192,6 +196,7 @@ static void begin_touch(struct tg_state *st, int active)
     st->hist_len = st->hist_next = 0;
     st->swiping = st->committed = false;
     st->pending = 0;
+    if (st->now - st->last_key_us < MS(st->cfg.after_key_ms)) st->phase = TG_DONE;
 }
 
 /* Adds the mean movement, since the previous frame, of the fingers that are in both frames. */
@@ -201,7 +206,7 @@ static void accumulate(struct tg_state *st)
     int n = 0;
     for (int s = 0; s < TG_SLOTS; s++) {
         struct tg_contact *c = &st->c[s];
-        bool tracked = c->active && c->has_pos && (st->phase == TG_GATHER || c->counted);
+        bool tracked = usable(c) && (st->phase == TG_GATHER || c->counted);
         if (tracked && c->in_prev) {
             dx += c->x - c->px;
             dy += c->y - c->py;
@@ -223,7 +228,7 @@ static void accumulate(struct tg_state *st)
 static void end_frame(struct tg_state *st)
 {
     int active = 0;
-    for (int s = 0; s < TG_SLOTS; s++) active += st->c[s].active && st->c[s].has_pos;
+    for (int s = 0; s < TG_SLOTS; s++) active += usable(&st->c[s]);
 
     if (st->phase == TG_IDLE && active) begin_touch(st, active);
     if (st->phase != TG_IDLE) accumulate(st);
@@ -243,7 +248,11 @@ static void end_frame(struct tg_state *st)
     }
     st->lifted_in_frame = st->counted_lifted = false;
 
-    if (!active) {
+    /* A passed-through touch belongs to the ROM until every finger, on a key or not, is lifted. */
+    bool ended = !active;
+    if (st->phase == TG_PASS)
+        for (int s = 0; s < TG_SLOTS; s++) ended = ended && !(st->c[s].active && st->c[s].has_pos);
+    if (ended) {
         st->phase = TG_IDLE;
         for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = false;
     }
@@ -295,10 +304,10 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
         st->slot = ev->value >= 0 && ev->value < TG_SLOTS ? ev->value : -1;
     } else if (ev->type == EV_ABS && ev->code == ABS_MT_TRACKING_ID && c) {
         /* A new id without a -1 first also ends the old contact. */
-        if (c->active) st->lifted_in_frame = true;
+        if (c->active && !c->on_key) st->lifted_in_frame = true;
         if (c->active && c->counted) st->counted_lifted = true;
         c->active = ev->value >= 0;
-        c->counted = false;
+        c->counted = c->on_key = false;
         if (c->active) c->has_pos = c->in_prev = false;
     } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_X && c) {
         c->x = ev->value;
@@ -306,6 +315,31 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
     } else if (ev->type == EV_ABS && ev->code == ABS_MT_POSITION_Y && c) {
         c->y = ev->value;
     }
+}
+
+static bool is_modifier(const struct tg_state *st, int scancode)
+{
+    for (int i = 0; i < st->cfg.nmods; i++)
+        if (st->cfg.mods[i].scancode == scancode) return true;
+    return false;
+}
+
+void tg_key_event(struct tg_state *st, const struct tg_event *ev)
+{
+    tg_advance(st, ev->t_us);
+    if (ev->type != EV_KEY || ev->value != 1) return; /* releases and autorepeat change nothing */
+    bool modifier = is_modifier(st, ev->code);
+    for (int s = 0; s < TG_SLOTS; s++)
+        if (st->c[s].active) st->c[s].on_key = true;
+    if (st->phase == TG_PASS) {
+        /* The ROM has the touch; a typed key ends it there, a held modifier is left to the ROM. */
+        if (modifier) return;
+        release_passthrough(st, ev->t_us);
+    }
+    if (st->phase == TG_GATHER || st->phase == TG_TRACK || st->phase == TG_PASS)
+        /* Nothing sent yet under a modifier means the touch was its finger: start over without it. */
+        st->phase = modifier && !st->committed ? TG_IDLE : TG_DONE;
+    if (!modifier) st->last_key_us = ev->t_us;
 }
 
 int64_t tg_next_deadline(const struct tg_state *st)

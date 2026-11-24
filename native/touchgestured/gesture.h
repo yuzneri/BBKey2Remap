@@ -33,6 +33,7 @@ struct tg_sink {
 
 struct tg_contact {
     bool active, has_pos, counted, in_prev;
+    bool on_key; /* was down when a key was pressed: taken as the finger on that key until lifted */
     int32_t x, y, px, py; /* current and previous-frame position */
 };
 
@@ -63,6 +64,7 @@ struct tg_state {
     int buf_len, buf_slot;   /* buf_slot: the slot in effect before the first buffered event */
     bool buf_overflow;
     bool dropping;           /* after SYN_DROPPED, until the next SYN_REPORT */
+    int64_t last_key_us;     /* last press of a key other than a modifier */
 };
 
 /* Starts with no fingers down. units_per_mm is the resolution of the X and Y axes. */
@@ -73,6 +75,14 @@ void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_
  * abandons the current touch; the caller should then feed the device's current slot state.
  */
 void tg_touch_event(struct tg_state *st, const struct tg_event *ev);
+
+/*
+ * Feeds one EV_KEY event of the keyboard (stmpe_keypad); other events are ignored. Fingers on the
+ * surface when a key goes down are taken as the finger on that key and leave the gesture. A key
+ * other than a modifier also cancels the current touch and makes touches starting within
+ * after_key_ms ignored; a modifier instead lets the remaining fingers start a new gesture.
+ */
+void tg_key_event(struct tg_state *st, const struct tg_event *ev);
 
 /* Moves time forward to now_us, acting on any deadline that has passed. */
 void tg_advance(struct tg_state *st, int64_t now_us);
