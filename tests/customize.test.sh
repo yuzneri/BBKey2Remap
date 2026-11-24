@@ -104,4 +104,18 @@ update_keeps_modifier_roles() {
 }
 fresh_device; check 'an update keeps the modifier roles and the original key layout of the previous version' update_keeps_modifier_roles
 
+update_keeps_touch_off() {
+    module_files "$PREV"
+    mkdir -p "$PREV/system/vendor/usr/keychars"
+    cp "$FIXTURES/key2-base.kcm" "$PREV/base.kcm"
+    cp "$FIXTURES/key2-base.kcm" "$PREV/system/vendor/usr/keychars/stmpe.kcm"
+    cp "$FIXTURES/key2-base.kl" "$PREV/base.kl"
+    sh "$PREV/remap.sh" save tp:mode=off >/dev/null || return 1
+    # While the previous module is active, its list is the live one.
+    mkdir -p "$DEV/system/etc" && cp "$PREV/system/etc/excluded-input-devices.xml" "$DEV/system/etc/"
+    installed_ok && cmp "$NEW/system/etc/excluded-input-devices.xml" "$PREV/system/etc/excluded-input-devices.xml" &&
+        [ "$(sh "$NEW/remap.sh" read)" = tp:mode=off ]
+}
+fresh_device; check 'an update keeps the touch surface turned off' update_keeps_touch_off
+
 finish
