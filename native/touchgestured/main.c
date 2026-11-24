@@ -6,7 +6,7 @@
  * It reads the touch surface (default "touch_keypad", which Android must ignore through
  * excluded-input-devices.xml) and the keyboard (default "stmpe_keypad") without grabbing them,
  * and writes to two uinput devices: a keyboard for gesture keys and, when a finger count is passed
- * through, a touchpad with the same axes as the surface for the ROM's own handling.
+ * through or a swipe scrolls, a touchpad with the same axes as the surface for the ROM's own handling.
  */
 #define _GNU_SOURCE /* ppoll in glibc; bionic has it anyway */
 #include "config.h"
@@ -41,7 +41,7 @@ struct daemon {
     struct tg_state st;
     const char *touch_name, *keys_name;
     int touch_fd, keys_fd, kbd_fd, pad_fd;
-    bool passes;             /* some finger count is passed through to the virtual touchpad */
+    bool passes;             /* some touches may go to the virtual touchpad (pass or scroll) */
     bool ready;              /* st is set up (on the first opening of the surface) */
 };
 

@@ -211,6 +211,11 @@ static void finish(struct tg_state *st)
     double start = start_units(st);
     if (st->ax * st->ax + st->ay * st->ay >= start * start && may_be_flick(st)) {
         enum tg_gesture g = flick_direction(st->ax, st->ay);
+        /* Swipes and flicks list their directions in the same order. */
+        if (binding(st, st->fingers, TG_SWIPE_UP + (g - TG_FLICK_UP))->scroll) {
+            start_passthrough(st);
+            return;
+        }
         if (emit(st, g)) return;
     }
     if (st->pending) send_pending(st);
@@ -262,13 +267,13 @@ static void accumulate(struct tg_state *st)
 }
 
 /*
- * Whether the touch's events are kept for a passthrough: until the fingers are counted for pass,
- * and then until a key is sent for scroll. Kept for every touch, since which binding a swipe takes
- * also depends on the modifiers held when it starts.
+ * Whether the current touch's events are still kept for a passthrough: until the fingers are
+ * counted for pass, and then until a key is sent for scroll. Kept for every touch, since which
+ * binding a swipe takes also depends on the modifiers held when it starts.
  */
-static bool buffering(const struct tg_state *st)
+static bool keeping(const struct tg_state *st)
 {
-    return st->phase == TG_IDLE || st->phase == TG_GATHER || (st->phase == TG_TRACK && !st->committed);
+    return st->phase == TG_GATHER || (st->phase == TG_TRACK && !st->committed);
 }
 
 static void end_frame(struct tg_state *st)
@@ -283,10 +288,8 @@ static void end_frame(struct tg_state *st)
         if (active > st->max_active) st->max_active = active;
         if (st->lifted_in_frame) {
             count_fingers(st);
-            if (st->phase == TG_TRACK) {
-                track(st);
-                finish(st);
-            }
+            if (st->phase == TG_TRACK) track(st);
+            if (st->phase == TG_TRACK) finish(st);
         } else if (!more_fingers_used(st, st->max_active)) {
             count_fingers(st);
             if (st->phase == TG_TRACK) track(st);
@@ -305,7 +308,7 @@ static void end_frame(struct tg_state *st)
         st->phase = TG_IDLE;
         for (int s = 0; s < TG_SLOTS; s++) st->c[s].counted = false;
     }
-    if (!buffering(st)) {
+    if (!keeping(st)) {
         st->buf_len = 0;
         st->buf_overflow = false;
     }
@@ -341,7 +344,7 @@ void tg_touch_event(struct tg_state *st, const struct tg_event *ev)
     }
     if (st->phase == TG_PASS) {
         st->sink.pass(st->sink.ctx, ev);
-    } else if (buffering(st)) {
+    } else if (st->phase == TG_IDLE || keeping(st)) {
         if (!st->buf_len) st->buf_slot = st->slot;
         if (st->buf_len < TG_PASS_BUFFER) st->buf[st->buf_len++] = *ev;
         else st->buf_overflow = true;

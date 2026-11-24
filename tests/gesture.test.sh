@@ -50,6 +50,7 @@ check 'scroll takes no modifiers' rejects 'bind 1 swipe up scroll ctrl\n' 'bind 
 check 'scroll takes no once' rejects 'bind 1 swipe up scroll once\n' 'bind ends with key'
 check 'a swipe cannot both scroll and send a key' rejects 'bind 1 swipe up scroll\nbind 1 swipe up key 1\n' 'bound twice'
 check 'scroll and passthrough of the same finger count conflict' rejects 'pass 1\nbind 1 swipe up scroll\n' 'pass'
+check 'passthrough after a scroll of a layer conflicts too' rejects 'bind shift 1 swipe up scroll\npass 1\n' 'pass'
 check 'flicks have no diagonals' rejects 'bind 1 flick up-left key 1\n' 'unknown gesture "flick up-left"'
 check 'a swipe needs a direction' rejects 'bind 1 swipe\n' 'swipe needs a direction'
 check 'a tap takes no direction' rejects 'bind 1 tap up key 1\n' 'bind ends with key'
@@ -463,6 +464,37 @@ replays_keys() {
 }
 
 MODS='mod 42 shift\nmod 54 shift\nmod 29 ctrl\n'
+
+# passes_from MS CONFIG SCRIPT: replaying SCRIPT prints its keys and, for the touch starting at MS,
+# exactly its events passed through: nothing of the touches before it.
+passes_from() {
+    touches "$3" > "$WORK/from.log"
+    { printf "$4"; echo "$1 pass EV_ABS ABS_MT_SLOT 00000000"; as_passed "$WORK/from.log" | awk -v t="$1" '$1 >= t'; } > "$WORK/from.expected"
+    passes "$2" "$WORK/from.log" "$WORK/from.expected"
+}
+check 'a scroll after a tap passes only its own touch' passes_from 300 "${SCROLL}bind 1 tap key 5\n" \
+    "0 0=500,200\n50 -0\n$(stroke 300 600 500,400 500,100)600 -0\n" '50 1-finger tap key 0x5\n'
+check 'a passthrough after a tap passes only its own touch' passes_from 600 'pass 2\nbind 1 tap key 1\n' \
+    '0 0=300,200\n50 -0\n600 0=300,200 1=700,200\n700 0=320,180 1=720,180\n800 -0 -1\n' '50 1-finger tap key 0x1\n'
+check 'a long touch sending no key does not use up the events kept for the next one' passes_from 4000 \
+    "${SCROLL}bind 1 tap key 5\n" \
+    "$(awk 'BEGIN { for (t = 0; t < 3000; t += 10) printf "%d 0=%d,200\\n", t, 100 + t % 2 }')3000 -0\n$(stroke 4000 4300 500,400 500,100)4300 -0\n" ''
+# Fingers lifted while gather_ms (150) still waits for a third finger.
+touches "$(stroke 0 40 500,400 500,100)40 -0\n" > "$WORK/gather-flick.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/gather-flick.log"; } > "$WORK/gather-flick.expected"
+check 'a fast swipe set to scroll, lifted while waiting for more fingers, is passed through and not a flick' \
+    passes "${SCROLL}bind 1 flick up key 0x11\nbind 3 tap key 9\n" "$WORK/gather-flick.log" "$WORK/gather-flick.expected"
+touches "$(awk 'BEGIN { for (t = 0; t <= 60; t += 10) printf "%d 0=500,%d 1=700,%d\\n", t, 400 - 5 * t, 400 - 5 * t
+    for (t = 80; t <= 300; t += 10) printf "%d 0=500,%d\\n", t, 100 - t / 10 }')70 -1\n300 -0\n" |
+    sort -s -t']' -k1,1 > "$WORK/gather-lift.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/gather-lift.log"; } > "$WORK/gather-lift.expected"
+check 'a two-finger scroll keeps going to the ROM after one finger lifts while waiting for more fingers' \
+    passes 'bind 2 swipe up scroll\nbind 3 tap key 9\n' "$WORK/gather-lift.log" "$WORK/gather-lift.expected"
+# 41 units up and 17 across: start_mm (42 units) in all, but on neither axis, so no swipe starts.
+touches "$(stroke 0 40 500,400 517,359)40 -0\n" > "$WORK/short-flick.log"
+{ echo '0 pass EV_ABS ABS_MT_SLOT 00000000'; as_passed "$WORK/short-flick.log"; } > "$WORK/short-flick.expected"
+check 'a flick too short to start a swipe, in a scroll direction, is passed through and not sent' \
+    passes "${SCROLL}bind 1 flick up key 0x11\n" "$WORK/short-flick.log" "$WORK/short-flick.expected"
 
 # scroll_layer CONFIG KEYS: whether the touch swiping up, with KEYS, is passed through without a key.
 # keys_layer CONFIG KEYS: whether it sends keys and is not passed through.

@@ -13,7 +13,10 @@
 #include <stdint.h>
 
 #define TG_SLOTS 16
-/* Events kept until the finger count is known: 500 ms of 3 fingers at 120 Hz is about 800. */
+/*
+ * Events kept until the finger count is known, or for a scroll until a key is sent: 500 ms of 3
+ * fingers at 120 Hz is about 800; a finger that rests sends none.
+ */
 #define TG_PASS_BUFFER 1024
 
 /* One evdev event; t_us is the event timestamp in microseconds. */
