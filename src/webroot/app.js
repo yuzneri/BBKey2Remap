@@ -492,15 +492,14 @@ function fallbackText(g) {
 /** Mode buttons, and in gesture mode the gesture assignments and the thresholds. */
 function renderTouch() {
   const mode = map['tp:mode'] || 'rom';
+  // A mode is a setting, not a part of the page to show, so it is a radio button rather than a tab.
   $('touchModes').replaceChildren(...TOUCH_MODES.map((m) => {
-    const b = button(m.label, () => setTouchMode(m.id), 'tab' + (m.id === mode ? ' active' : ''));
-    b.setAttribute('role', 'radio');
-    b.setAttribute('aria-checked', String(m.id === mode));
-    b.disabled = m.id !== 'rom' && m.id !== mode && touchBlockers.length > 0;
-    return b;
+    const input = el('input', { type: 'radio', name: 'touchMode', checked: m.id === mode, onchange: () => setTouchMode(m.id) });
+    input.disabled = m.id !== 'rom' && m.id !== mode && touchBlockers.length > 0;
+    return el('label', { className: 'choice' + (m.id === mode ? ' checked' : '') + (input.disabled ? ' unavailable' : '') },
+      input, el('span', {}, m.label, el('small', { textContent: m.hint })));
   }));
-  $('touchHint').textContent = TOUCH_MODES.find((m) => m.id === mode).hint +
-    (touchBlockers.length ? `${touchBlockers.join('、')}があるため、切り替えられません。` : '');
+  $('touchHint').textContent = touchBlockers.length ? `${touchBlockers.join('、')}があるため、切り替えられません。` : '';
   $('gestureEditor').hidden = mode !== 'gesture';
   if (mode === 'gesture') {
     renderFingers();
@@ -521,7 +520,7 @@ function renderFingers() {
   }));
   const layerLabel = touchLayer && KCM.TOUCH_LAYERS.find((l) => l.id === touchLayer).label;
   $('touchLayerHint').textContent = !touchLayer ? '修飾キーを押していないときの割り当てです。'
-    : `${layerLabel}を押している間の割り当てです。割り当てのないジェスチャーは、「なし」のキーを` +
+    : `${layerLabel}を押している間の割り当てです。割り当てのないジェスチャーは、「通常」のキーを` +
       `${touchLayer === 'sym' ? 'そのまま' : 'この修飾キーを付けて'}送ります（薄い表示）。` +
       (available.has(touchLayer) ? '' : `今のキー配置には${layerLabel}を押せるキーがないため、この割り当ては使われません。`);
   $('fingerTabs').replaceChildren(...['1', '2', '3'].map((f) => {
@@ -538,7 +537,7 @@ function renderFingers() {
   $('passFingers').checked = pass;
   $('passFingers').disabled = touchLayer !== '';
   $('passLabel').textContent = `${touchFingers}本指の操作はROMの標準の動作（スクロールなど）に渡す` +
-    (touchLayer ? '（「なし」のタブで切り替えます）' : '');
+    (touchLayer ? '（「通常」のタブで切り替えます）' : '');
   const cell = (g) => {
     const id = KCM.gestureId(touchLayer, touchFingers, g.id);
     const fallback = own(map, id) ? '' : fallbackText(g.id);

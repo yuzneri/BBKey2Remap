@@ -29,6 +29,12 @@ footer{position:sticky;bottom:0;margin-top:24px;padding:10px 0 12px;background:C
 [hidden]{display:none!important}
 
 .tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0}
+.rowlabel{margin:12px 0 0;font-size:12px;font-weight:600;color:gray}
+.choices{display:grid;gap:6px;margin:8px 0}
+.choice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:15px}
+.choice input{margin:3px 0 0}
+.choice small{display:block;margin-top:2px;font-size:12px;letter-spacing:0;color:gray}
+.choice.checked{border-color:var(--accent);background:var(--soft)}
 .tab{flex:none;padding:8px 12px;border-radius:999px;position:relative}
 .tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .badge{display:inline-block;min-width:18px;margin-left:6px;padding:0 5px;border-radius:9px;background:var(--warn);color:#fff;font-size:11px;line-height:18px}

@@ -23,7 +23,8 @@
 </nav>
 <div id="view-keys" class="view" role="tabpanel">
 <section>
-<div id="tabs" class="tabs" role="tablist"></div>
+<p class="rowlabel" id="tabsLabel">一緒に押す修飾キー</p>
+<div id="tabs" class="tabs" role="tablist" aria-labelledby="tabsLabel"></div>
 <details id="advanced">
 <summary>組み合わせや左右を指定する</summary>
 <div id="mods" class="mods"></div>
@@ -62,12 +63,14 @@
 <div id="view-touch" class="view" role="tabpanel">
 <section id="touch">
 <h2>キーボードのタッチ操作</h2>
-<div id="touchModes" class="tabs" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
+<div id="touchModes" class="choices" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
 <p id="touchHint" class="hint"></p>
 <div id="gestureEditor" hidden>
-<div id="layerTabs" class="tabs" role="radiogroup" aria-label="押している修飾キー"></div>
+<p class="rowlabel" id="layerTabsLabel">一緒に押す修飾キー</p>
+<div id="layerTabs" class="tabs" role="radiogroup" aria-labelledby="layerTabsLabel"></div>
 <p id="touchLayerHint" class="hint"></p>
-<div id="fingerTabs" class="tabs" role="radiogroup" aria-label="指の本数"></div>
+<p class="rowlabel" id="fingerTabsLabel">指の本数</p>
+<div id="fingerTabs" class="tabs" role="radiogroup" aria-labelledby="fingerTabsLabel"></div>
 <label id="passBox" class="check"><input id="passFingers" type="checkbox"><span id="passLabel"></span></label>
 <div id="gestures" class="gestures"></div>
 <div id="gesturePanel" hidden>

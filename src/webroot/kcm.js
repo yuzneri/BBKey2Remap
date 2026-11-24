@@ -111,8 +111,9 @@
   const TOUCH_THRESHOLDS = ['start_mm', 'step_mm', 'flick_mm_s', 'tap_ms', 'hold_ms', 'gather_ms', 'after_key_ms'];
   const TOUCH_GESTURE = /^tp:((shift|alt|ctrl|sym)_)?[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right)|tap)$/;
   /** Gesture layers: while the physical modifier is held, its layer's gesture keys are used. */
-  const TOUCH_LAYERS = [{ id: '', label: 'なし' }, { id: 'shift', label: 'Shift' }, { id: 'alt', label: 'Alt' },
-    { id: 'ctrl', label: 'Ctrl' }, { id: 'sym', label: 'SYM' }];
+  // Listed as the key editor lists its layers; touchgestured picks among held ones in its own order.
+  const TOUCH_LAYERS = [{ id: '', label: '通常' }, { id: 'shift', label: 'Shift' }, { id: 'alt', label: 'Alt' },
+    { id: 'sym', label: 'SYM' }, { id: 'ctrl', label: 'Ctrl' }];
   const TOUCH_MODIFIERS = ['ctrl', 'shift', 'alt', 'meta'];
 
   /**
