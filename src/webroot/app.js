@@ -26,6 +26,7 @@ let klEditable = false;
 // Other excluded device lists that keep this module from turning the touch surface off.
 let touchBlockers = [];
 let touchThresholds = [];
+let touchLayer = '';
 let touchFingers = '1';
 let touchGesture = null;
 let touchCategory = 'cursor';
@@ -454,8 +455,22 @@ function touchText(id, v) {
   return KCM.touchKeyText(v);
 }
 
-/** The gesture assignments of finger count F ("1".."3") in the map, as their IDs. */
-function gestureIds(f) { return KCM.TOUCH_GESTURES.map((g) => `tp:${f}_${g.id}`).filter((id) => own(map, id)); }
+/** The gesture assignments of finger count F ("1".."3") in LAYER ("" for the base one), as their IDs. */
+function gestureIds(f, layer) { return KCM.TOUCH_GESTURES.map((g) => KCM.gestureId(layer, f, g.id)).filter((id) => own(map, id)); }
+
+/** The gesture assignments of finger count F in every layer. */
+function allGestureIds(f) { return KCM.TOUCH_LAYERS.flatMap((l) => gestureIds(f, l.id)); }
+
+/**
+ * What gesture G of the selected finger count sends in the selected layer when that layer has no
+ * key for it: the base layer's key with the layer's modifier (SYM adds none), or '' if neither has one.
+ */
+function fallbackText(g) {
+  const base = map[KCM.gestureId('', touchFingers, g)];
+  if (!touchLayer || !base) return '';
+  const { code, mods } = KCM.parseTouchKey(base);
+  return KCM.touchKeyText(KCM.formatTouchKey(code, touchLayer === 'sym' ? mods : [...mods, touchLayer]));
+}
 
 /** Mode buttons, and in gesture mode the gesture assignments and the thresholds. */
 function renderTouch() {
@@ -478,8 +493,19 @@ function renderTouch() {
 }
 
 function renderFingers() {
+  $('layerTabs').replaceChildren(...KCM.TOUCH_LAYERS.map((l) => {
+    const b = button(l.label, () => { touchLayer = l.id; touchGesture = null; render(); }, 'tab' + (l.id === touchLayer ? ' active' : ''));
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(l.id === touchLayer));
+    const n = ['1', '2', '3'].reduce((sum, f) => sum + gestureIds(f, l.id).length, 0);
+    if (n) b.append(el('span', { className: 'badge', textContent: String(n) }));
+    return b;
+  }));
+  $('layerHint').textContent = touchLayer
+    ? `${KCM.TOUCH_LAYERS.find((l) => l.id === touchLayer).label}を押している間の割り当てです。割り当てのないジェスチャーは、「なし」のキーに${touchLayer === 'sym' ? '' : 'この修飾キーを付けて'}送ります（薄い表示）。`
+    : '修飾キーを押していないときの割り当てです。';
   $('fingerTabs').replaceChildren(...['1', '2', '3'].map((f) => {
-    const n = gestureIds(f).length;
+    const n = gestureIds(f, touchLayer).length;
     const b = button(`${f}本指`, () => { touchFingers = f; touchGesture = null; render(); }, 'tab' + (f === touchFingers ? ' active' : ''));
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(f === touchFingers));
@@ -488,17 +514,21 @@ function renderFingers() {
     return b;
   }));
   const pass = own(map, `tp:${touchFingers}_pass`);
+  // Passthrough is per finger count, whatever modifier is held.
+  $('passBox').hidden = touchLayer !== '';
   $('passFingers').checked = pass;
   $('passLabel').textContent = `${touchFingers}本指の操作はROMの標準の動作（スクロールなど）に渡す`;
   const cell = (g) => {
-    const id = `tp:${touchFingers}_${g.id}`;
+    const id = KCM.gestureId(touchLayer, touchFingers, g.id);
+    const fallback = own(map, id) ? '' : fallbackText(g.id);
     const b = button('', () => { touchGesture = g.id; render(); },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
-    b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : '割り当てなし'));
+    b.setAttribute('aria-label', KCM.gestureName(id) + '：' +
+      (own(map, id) ? KCM.touchKeyText(map[id]) : fallback ? `割り当てなし（${fallback}を送る）` : '割り当てなし'));
     b.setAttribute('aria-pressed', String(touchGesture === g.id));
     // The group heading names the kind, so a button shows only its direction.
-    b.append(el('small', { textContent: KCM.gestureName(id).replace(/^[123]本指で(なぞる|払う)?/, '') }),
-      el('span', { textContent: own(map, id) ? KCM.touchKeyText(map[id]) : '—' }));
+    b.append(el('small', { textContent: KCM.gestureName(id).replace(/^.*本指で(なぞる|払う)?/, '') }),
+      el('span', { textContent: own(map, id) ? KCM.touchKeyText(map[id]) : fallback || '—', className: fallback ? 'fallback' : '' }));
     b.disabled = pass;
     return b;
   };
@@ -517,11 +547,13 @@ function renderFingers() {
 
 /** The key of the selected gesture: palette, modifiers and removal. */
 function renderGesturePanel() {
-  const id = touchGesture && `tp:${touchFingers}_${touchGesture}`;
+  const id = touchGesture && KCM.gestureId(touchLayer, touchFingers, touchGesture);
   $('gesturePanel').hidden = !id || own(map, `tp:${touchFingers}_pass`);
   if ($('gesturePanel').hidden) return;
   const { code, mods } = KCM.parseTouchKey(map[id]);
-  $('gestureTarget').textContent = KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : '割り当てなし');
+  const fallback = own(map, id) ? '' : fallbackText(touchGesture);
+  $('gestureTarget').textContent = KCM.gestureName(id) + '：' +
+    (own(map, id) ? KCM.touchKeyText(map[id]) : fallback ? `割り当てなし（${fallback}を送る）` : '割り当てなし');
   $('gestureMods').replaceChildren(...['ctrl', 'shift', 'alt', 'meta'].map((m) => {
     const box = el('input', { type: 'checkbox', checked: mods.includes(m), disabled: !own(map, id) });
     box.onchange = () => setGestureKey(id, code, box.checked ? [...mods, m] : mods.filter((x) => x !== m));
@@ -607,7 +639,7 @@ $('passFingers').onchange = async () => {
   const f = touchFingers;
   const box = $('passFingers');
   if (!box.checked) { delete map[`tp:${f}_pass`]; changed(`${f}本指の操作を独自ジェスチャーに戻しました。`); return; }
-  const ids = gestureIds(f);
+  const ids = allGestureIds(f);
   // touchgestured cannot both pass a finger count through and recognise its gestures.
   if (ids.length && !await ask(`${f}本指の割り当て${ids.length}件を外して、ROMの標準の動作に渡しますか？`)) { box.checked = false; return; }
   ids.forEach((id) => delete map[id]);
