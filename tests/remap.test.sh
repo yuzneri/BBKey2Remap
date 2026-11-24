@@ -310,7 +310,7 @@ check 'gesture mode without gestures installs an empty gesture key layout' gestu
 
 set -f; remap save $GESTURES >/dev/null; set +f
 for bad in tp:1_swipe_upleft=DPAD_UP tp:4_tap=ENTER tp:1_tap=enter tp:1_tap=ENTER+ tp:1_tap=ENTER++ctrl tp:1_pass=yes \
-    tp:tap_ms=fast tp:step_mm= tp:1_tap= tp:step_mm=2. tp:step_mm=.5 tp:step_mm=1.2.3; do
+    tp:tap_ms=fast tp:step_mm= tp:1_tap= tp:step_mm=2. tp:step_mm=.5 tp:step_mm=1.2.3 tp:step_mm=123456 tp:step_mm=1.1234567; do
     check "a malformed touch setting is refused: $bad" refused 'タッチ操作の設定が正しくありません' remap save "$bad"
 done
 check 'a touch setting given twice is refused' refused 'タッチ操作の設定が重複しています' remap save tp:1_tap=ENTER tp:1_tap=SPACE
@@ -332,8 +332,8 @@ status_reports_gesture_mode() {
 check 'status reports gesture mode as saved and live' status_reports_gesture_mode
 status_reports_thresholds() {
     remap status > "$WORK/status" && grep '^tp_threshold=' "$WORK/status" > "$WORK/thresholds" &&
-        [ "$(wc -l < "$WORK/thresholds")" -eq 7 ] && grep -qx 'tp_threshold=step_mm:3:0.5:25' "$WORK/thresholds" &&
-        grep -qx 'tp_threshold=after_key_ms:300:0:5000' "$WORK/thresholds"
+        [ "$(wc -l < "$WORK/thresholds")" -eq 7 ] && grep -qx 'tp_threshold=step_mm:3:0.5:25:real' "$WORK/thresholds" &&
+        grep -qx 'tp_threshold=after_key_ms:300:0:5000:int' "$WORK/thresholds"
 }
 check "status reports each threshold's default and range from touchgestured" status_reports_thresholds
 remap save sym:H=R_DPAD_LEFT >/dev/null
@@ -418,11 +418,18 @@ stubborn_daemon_is_killed() {
     remap touch-stop; ! alive "$pid"
 }
 check 'touch-stop kills a touchgestured that ignores SIGTERM' stubborn_daemon_is_killed
+daemon_pending() {
+    remap save tp:mode=gesture tp:3_tap=TAB >/dev/null && remap status > "$WORK/status" &&
+        grep -qx tp_daemon=pending "$WORK/status" && ! grep -q '^tp_daemon_log=' "$WORK/status"
+}
+check 'status reports a daemon waiting for the reboot that makes the saved key layout live' daemon_pending
+daemon_unneeded() { remap save tp:mode=gesture >/dev/null && remap status | grep -qx tp_daemon=unneeded; }
+check 'status reports that no daemon is needed when no gesture is assigned' daemon_unneeded
 
 stale_pid_left_alone() {
     sleep 30 & other=$!
     echo "$other" > "$MOD/.touchgestured.pid"
-    remap status | grep -qx tp_daemon=stopped && remap touch-stop && kill -0 "$other"; rc=$?
+    ! remap status | grep -qx tp_daemon=running && remap touch-stop && kill -0 "$other"; rc=$?
     kill "$other"; return "$rc"
 }
 check 'a PID file naming another process is neither reported as running nor killed' stale_pid_left_alone

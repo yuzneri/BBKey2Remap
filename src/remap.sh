@@ -105,8 +105,10 @@ check_touch() {
     id=${1%%=*} value=${1#*=}
     case "$id" in
         start_mm|step_mm|flick_mm_s|tap_ms|hold_ms|gather_ms|after_key_ms)
-            # The same grammar as the WebUI's (kcm.js): digits, optionally one "." between digits.
-            case "$value" in ''|*[!0-9.]*|.*|*.|*.*.*) fail 'タッチ操作の設定が正しくありません。' ;; esac ;;
+            # The same grammar as the WebUI's (kcm.js): up to 5 digits, optionally "." and up to 6 more.
+            case "$value" in ''|*[!0-9.]*|.*|*.|*.*.*) fail 'タッチ操作の設定が正しくありません。' ;; esac
+            int=${value%%.*}; frac=${value#"$int"}; frac=${frac#.}
+            [ "${#int}" -le 5 ] && [ "${#frac}" -le 6 ] || fail 'タッチ操作の設定が正しくありません。' ;;
         [123]_swipe_up|[123]_swipe_down|[123]_swipe_left|[123]_swipe_right|[123]_tap|\
         [123]_flick_up|[123]_flick_down|[123]_flick_left|[123]_flick_right|\
         [123]_flick_upleft|[123]_flick_upright|[123]_flick_downleft|[123]_flick_downright)
@@ -215,18 +217,26 @@ layouts_live() {
     cmp -s "$kl" "$LIVE_KL"
 }
 
-# touch_start: restart touchgestured when gesture mode is saved and in effect (the live excluded
-# device list is this module's, marked gesture) and the saved key layouts are live; until a reboot
-# makes them live, a running daemon keeps the settings that match the live ones. Outside the active
-# module directory (a pending update being installed) nothing changes: the running module's daemon
-# stays until the reboot. Fails if the daemon cannot be (re)started.
+# touch_state: whether touchgestured should run: "off" (gesture mode is not both saved and in
+# effect, the live excluded device list being this module's, marked gesture), "unneeded" (no gesture
+# assigned), "pending" (the saved key layouts become live only at the next boot) or "ready".
+touch_state() {
+    if [ "$(tp_mode "$DST_TP")" != gesture ] || [ "$(tp_mode "$LIVE_TP")" != gesture ]; then echo off
+    elif [ ! -s "$DST_TG_CONF" ]; then echo unneeded
+    elif ! layouts_live; then echo pending
+    else echo ready; fi
+}
+
+# touch_start: (re)start touchgestured when ready, stop it when it is not wanted. While pending, a
+# running daemon keeps the settings that match the live key layouts until the reboot. Outside the
+# active module directory (a pending update being installed) nothing changes: the running module's
+# daemon stays until the reboot. Fails if the daemon cannot be (re)started.
 touch_start() {
     [ "$BASE" = "$(cd "$R/data/adb/modules/$MODID" 2>/dev/null && pwd -P)" ] || return 0
-    if [ "$(tp_mode "$DST_TP")" != gesture ] || [ "$(tp_mode "$LIVE_TP")" != gesture ] || [ ! -s "$DST_TG_CONF" ]; then
-        touch_stop
-        return
-    fi
-    layouts_live || return 0
+    case "$(touch_state)" in
+        off|unneeded) touch_stop; return ;;
+        pending) return 0 ;;
+    esac
     touch_stop || return 1
     # setsid detaches it from the WebUI's shell, which may be killed once the command returns.
     if command -v setsid >/dev/null; then detach=setsid; else detach=; fi
@@ -294,11 +304,16 @@ status() {
     if [ -n "$live" ]; then echo "tp_live=$live"; elif [ -e "$LIVE_TP" ]; then echo tp_live=foreign; else echo tp_live=rom; fi
     tp_blockers
     # The thresholds' defaults and ranges come from touchgestured itself, so the WebUI keeps no copy.
-    "$TG" thresholds 2>/dev/null | runawk 'NF == 4 { print "tp_threshold=" $1 ":" $2 ":" $3 ":" $4 }' || :
+    "$TG" thresholds 2>/dev/null | runawk 'NF == 5 { print "tp_threshold=" $1 ":" $2 ":" $3 ":" $4 ":" $5 }' || :
+    # running, or why not: stopped (although it should run, or gesture mode is off), unneeded, pending.
     if [ -n "$(touch_pid)" ]; then echo tp_daemon=running
     else
-        echo tp_daemon=stopped
-        [ ! -s "$TG_LOG" ] || echo "tp_daemon_log=$(tail -n 1 "$TG_LOG" | tr -d '\r')"
+        state=$(touch_state)
+        case "$state" in
+            unneeded|pending) echo "tp_daemon=$state" ;;
+            *) echo tp_daemon=stopped
+               [ ! -s "$TG_LOG" ] || echo "tp_daemon_log=$(tail -n 1 "$TG_LOG" | tr -d '\r')" ;;
+        esac
     fi
     for f in disable update remove; do [ -e "$BASE/$f" ] && echo "flag=$f"; done
     return 0

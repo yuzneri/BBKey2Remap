@@ -51,8 +51,8 @@ void tg_config_defaults(struct tg_config *cfg);
 int tg_config_load(struct tg_config *cfg, FILE *in, char *err, size_t errlen);
 
 /*
- * Writes one line "NAME DEFAULT MIN MAX" per threshold, the defaults and accepted ranges of the
- * settings file, so that the WebUI shows and checks them without a copy of its own.
+ * Writes one line "NAME DEFAULT MIN MAX int|real" per threshold, the defaults, accepted ranges and
+ * kinds of number of the settings file, so that the WebUI shows and checks them without a copy.
  */
 void tg_config_print_thresholds(FILE *out);
 

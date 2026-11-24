@@ -2,7 +2,7 @@
  * touchgestured: recognises gestures on the KEY2 keyboard surface and sends them as keys.
  *   touchgestured CONFIG [--touch NAME] [--keys NAME]
  *   touchgestured check CONFIG    validate CONFIG and exit (0 when it would be accepted)
- *   touchgestured thresholds      print "NAME DEFAULT MIN MAX" for each threshold
+ *   touchgestured thresholds      print "NAME DEFAULT MIN MAX int|real" for each threshold
  * It reads the touch surface (default "touch_keypad", which Android must ignore through
  * excluded-input-devices.xml) and the keyboard (default "stmpe_keypad") without grabbing them,
  * and writes to two uinput devices: a keyboard for gesture keys and, when a finger count is passed

@@ -109,7 +109,10 @@ test('status lines parse into diagnostics', () => {
 test('gestures: the 13 of touchgestured, their names, and their key values', () => {
   assert.equal(KCM.TOUCH_GESTURES.length, 13);
   assert.deepEqual(KCM.TOUCH_GESTURES.map((g) => g.id).slice(0, 5), ['swipe_up', 'swipe_down', 'swipe_left', 'swipe_right', 'flick_up']);
-  assert.equal(KCM.TOUCH_GESTURES[12].id, 'tap');
+  assert.deepEqual(KCM.TOUCH_GESTURES.map((g) => g.id), ['swipe_up', 'swipe_down', 'swipe_left', 'swipe_right',
+    'flick_up', 'flick_down', 'flick_left', 'flick_right', 'flick_upleft', 'flick_upright', 'flick_downleft', 'flick_downright', 'tap']);
+  assert.throws(() => KCM.validate({ 'tp:2_pass': 'on', 'tp:2_tap': 'ENTER' }), /2本指/);
+  assert.ok(KCM.validate({ 'tp:2_pass': 'on', 'tp:1_tap': 'ENTER' }));
   assert.equal(KCM.gestureName('tp:2_flick_upleft'), '2本指で払う↖');
   assert.equal(KCM.gestureName('tp:1_tap'), '1本指でタップ');
   for (const g of KCM.TOUCH_GESTURES) assert.ok(KCM.validate({ ['tp:3_' + g.id]: 'ENTER' }), g.id);
@@ -120,10 +123,10 @@ test('gestures: the 13 of touchgestured, their names, and their key values', () 
 });
 
 test('thresholds are checked against the range touchgestured reports', () => {
-  const mm = { name: 'step_mm', min: 0.5, max: 25 };
-  const ms = { name: 'tap_ms', min: 0, max: 2000 };
-  for (const ok of ['0.5', '3', '2.5', '25']) assert.ok(KCM.validThreshold(mm, ok), ok);
-  for (const bad of ['0.4', '25.1', '', '2.', '.5', '-1', '1e2', 'x']) assert.ok(!KCM.validThreshold(mm, bad), bad);
+  const mm = { name: 'step_mm', min: 0.5, max: 25, integer: false };
+  const ms = { name: 'tap_ms', min: 0, max: 2000, integer: true };
+  for (const ok of ['0.5', '3', '2.5', '25', '2.123456']) assert.ok(KCM.validThreshold(mm, ok), ok);
+  for (const bad of ['0.4', '25.1', '', '2.', '.5', '-1', '1e2', 'x', '2.1234567', '000003']) assert.ok(!KCM.validThreshold(mm, bad), bad);
   assert.ok(KCM.validThreshold(ms, '0') && KCM.validThreshold(ms, '2000'));
   assert.ok(!KCM.validThreshold(ms, '10.5') && !KCM.validThreshold(ms, '2001'));
 });
@@ -135,19 +138,26 @@ test('diagnostics warn when the gesture daemon is not running in gesture mode', 
     .includes('!ジェスチャーを読み取る常駐プログラムが動いていません。最後の記録：touchgestured: no uinput'));
   assert.ok(text(live + 'tp_daemon=running\n').every((t) => !t.startsWith('!')));
   assert.ok(text('tp_saved=gesture\ntp_live=off\ntp_daemon=stopped\n').every((t) => !t.includes('常駐プログラム')), 'pending reboot');
+  const pending = text(live + 'tp_daemon=pending\n');
+  assert.ok(pending.includes('割り当てたジェスチャーは、再起動後に使えます。') && pending.every((t) => !t.startsWith('!')), pending.join('\n'));
+  const unneeded = text(live + 'tp_daemon=unneeded\n');
+  assert.ok(unneeded.includes('ジェスチャーが割り当てられていないため、常駐プログラムは動かしていません。') &&
+    unneeded.every((t) => !t.startsWith('!')), unneeded.join('\n'));
 });
 
 test('status lines give the thresholds from touchgestured and whether it runs', () => {
-  const st = KCM.parseStatus('tp_threshold=step_mm:3:0.5:25\ntp_threshold=tap_ms:200:0:2000\ntp_threshold=bad:x:1:2\n' +
+  const st = KCM.parseStatus('tp_threshold=step_mm:3:0.5:25:real\ntp_threshold=tap_ms:200:0:2000:int\ntp_threshold=bad:x:1:2:int\n' +
+    'tp_threshold=old:1:0:2\n' +
     'tp_daemon=stopped\ntp_daemon_log=touchgestured: /dev/uinput: Permission denied\n');
-  assert.deepEqual(st.tpThresholds, [{ name: 'step_mm', def: 3, min: 0.5, max: 25 }, { name: 'tap_ms', def: 200, min: 0, max: 2000 }]);
+  assert.deepEqual(st.tpThresholds, [{ name: 'step_mm', def: 3, min: 0.5, max: 25, integer: false },
+    { name: 'tap_ms', def: 200, min: 0, max: 2000, integer: true }]);
   assert.equal(st.tpDaemon, 'stopped');
   assert.equal(st.tpDaemonLog, 'touchgestured: /dev/uinput: Permission denied');
 });
 
 test('touch surface settings: the modes, thresholds, gesture keys and passthrough', () => {
   const good = { 'tp:mode': 'gesture', 'tp:step_mm': '2.5', 'tp:tap_ms': '200', 'tp:1_swipe_left': 'DPAD_LEFT+shift',
-    'tp:2_flick_upleft': 'MOVE_HOME+ctrl+alt', 'tp:3_tap': 'ENTER', 'tp:2_pass': 'on', 'sym:H': 'R_DPAD_LEFT' };
+    'tp:1_flick_upleft': 'MOVE_HOME+ctrl+alt', 'tp:3_tap': 'ENTER', 'tp:2_pass': 'on', 'sym:H': 'R_DPAD_LEFT' };
   assert.deepEqual(KCM.validate(good), Object.assign(Object.create(null), good));
   assert.deepEqual(KCM.validate({ 'tp:mode': 'off' }), Object.assign(Object.create(null), { 'tp:mode': 'off' }));
   for (const bad of [{ 'tp:mode': 'on' }, { 'tp:mode': 'rom' }, { 'tp:speed': 'off' }, { 'tp:mode': 'R_TAB' },

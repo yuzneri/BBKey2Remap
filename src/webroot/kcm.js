@@ -106,6 +106,8 @@
     return !!m && own(PHYSICAL, m[1]) && typeof v === 'string' && (ROLE_MODIFIERS.includes(v) || own(ACTIONS, v));
   }
 
+  // remap.sh's grammar for a threshold; the length also keeps a settings line under its 256 bytes.
+  const THRESHOLD_FORM = /^[0-9]{1,5}(\.[0-9]{1,6})?$/;
   const TOUCH_THRESHOLDS = ['start_mm', 'step_mm', 'flick_mm_s', 'tap_ms', 'hold_ms', 'gather_ms', 'after_key_ms'];
   const TOUCH_GESTURE = /^tp:[123]_(swipe_(up|down|left|right)|flick_(up|down|left|right|upleft|upright|downleft|downright)|tap)$/;
   const TOUCH_MODIFIERS = ['ctrl', 'shift', 'alt', 'meta'];
@@ -118,7 +120,7 @@
   function validTouch(id, v) {
     if (typeof v !== 'string') return false;
     if (id === 'tp:mode') return v === 'off' || v === 'gesture';
-    if (TOUCH_THRESHOLDS.includes(id.slice(3))) return /^[0-9]+(\.[0-9]+)?$/.test(v);
+    if (TOUCH_THRESHOLDS.includes(id.slice(3))) return THRESHOLD_FORM.test(v);
     if (/^tp:[123]_pass$/.test(id)) return v === 'on';
     if (!TOUCH_GESTURE.test(id)) return false;
     const [code, ...mods] = v.split('+');
@@ -126,7 +128,7 @@
   }
 
   const ARROWS = { up: '↑', down: '↓', left: '←', right: '→', upleft: '↖', upright: '↗', downleft: '↙', downright: '↘' };
-  /** The gestures of one finger count, in touchgestured's order: {id ("swipe_up"), kind, dir}. */
+  /** The gestures of one finger count, as the page lists them: {id ("swipe_up"), kind, dir}. */
   const TOUCH_GESTURES = [
     ...['up', 'down', 'left', 'right'].map((dir) => ({ id: 'swipe_' + dir, kind: 'swipe', dir })),
     ...['up', 'down', 'left', 'right', 'upleft', 'upright', 'downleft', 'downright'].map((dir) => ({ id: 'flick_' + dir, kind: 'flick', dir })),
@@ -159,13 +161,13 @@
   }
 
   /**
-   * Whether text is acceptable for threshold T ({name, min, max} from touchgestured): a plain
-   * number in range, whole for the millisecond ones.
+   * Whether text is acceptable for threshold T ({min, max, integer} from touchgestured): a plain
+   * number in range, whole where the table says so.
    */
   function validThreshold(t, text) {
-    if (!/^[0-9]+(\.[0-9]+)?$/.test(text)) return false;
+    if (!THRESHOLD_FORM.test(text)) return false;
     const v = Number(text);
-    return v >= t.min && v <= t.max && (!t.name.endsWith('_ms') || Number.isInteger(v));
+    return v >= t.min && v <= t.max && (!t.integer || Number.isInteger(v));
   }
 
   /** Whether ID ("layer:KEY") names a canonical layer and a KEY2 key. */
@@ -184,6 +186,12 @@
       const ok = id.startsWith('kl:') ? validRole(id, v) : id.startsWith('tp:') ? validTouch(id, v) : validId(id) && validValue(v);
       if (!ok) throw new Error('読み込めない割り当てがあります：' + id);
       out[id] = v;
+    }
+    // touchgestured refuses a finger count that is both passed through and given gestures.
+    for (const f of ['1', '2', '3']) {
+      if (out[`tp:${f}_pass`] && TOUCH_GESTURES.some((g) => own(out, `tp:${f}_${g.id}`))) {
+        throw new Error(`${f}本指は、ROMの標準の動作に渡す設定とジェスチャーの割り当てを同時には持てません。`);
+      }
     }
     return out;
   }
@@ -458,8 +466,9 @@
    * remap.sh status output as {kcmLoaded, shadowedBy, conflicts, applied, flags, modifiers, touch}.
    * Touch fields: tpSaved and tpLive are "rom", "off" or "gesture" (tpLive also "foreign");
    * tpExcluded is "yes", "no", or "" when dumpsys gave no excluded device list; tpThresholds is
-   * [{name, def, min, max}] from touchgestured; tpDaemon is "running", "stopped" or "", with
-   * tpDaemonLog the last line of its log when it stopped.
+   * [{name, def, min, max, integer}] from touchgestured; tpDaemon is "running", "stopped",
+   * "unneeded" (no gesture assigned), "pending" (until the next boot) or "", with tpDaemonLog the
+   * last line of its log when it stopped.
    */
   function parseStatus(text) {
     const st = { kcmLoaded: '', klLoaded: '', shadowedBy: [], conflicts: [], applied: false, klApplied: false,
@@ -486,9 +495,9 @@
       else if (k === 'tp_daemon') st.tpDaemon = v;
       else if (k === 'tp_daemon_log') st.tpDaemonLog = v;
       else if (k === 'tp_threshold') {
-        const [name, def, min, max] = v.split(':');
-        if ([def, min, max].every((x) => x !== undefined && Number.isFinite(Number(x)))) {
-          st.tpThresholds.push({ name, def: Number(def), min: Number(min), max: Number(max) });
+        const [name, def, min, max, kind] = v.split(':');
+        if ([def, min, max].every((x) => x !== undefined && Number.isFinite(Number(x))) && (kind === 'int' || kind === 'real')) {
+          st.tpThresholds.push({ name, def: Number(def), min: Number(min), max: Number(max), integer: kind === 'int' });
         }
       }
       else if (k === 'kl_base' || k === 'kl_live') {
@@ -529,9 +538,15 @@
     }
     if (st.kcmLoaded && /\/stmpe\.kcm$/.test(st.kcmLoaded)) out.push({ warn: false, text: `Androidは${st.kcmLoaded}を読み込んでいます。` });
     if (st.klLoaded && /\/stmpe\.kl$/.test(st.klLoaded)) out.push({ warn: false, text: `Androidは${st.klLoaded}を読み込んでいます。` });
-    if (st.tpSaved === 'gesture' && st.tpLive === 'gesture' && st.tpDaemon === 'stopped') {
-      out.push({ warn: true, text: 'ジェスチャーを読み取る常駐プログラムが動いていません。' +
-        (st.tpDaemonLog ? `最後の記録：${st.tpDaemonLog}` : '保存し直すか、再起動してください。') });
+    if (st.tpSaved === 'gesture' && st.tpLive === 'gesture') {
+      if (st.tpDaemon === 'stopped') {
+        out.push({ warn: true, text: 'ジェスチャーを読み取る常駐プログラムが動いていません。' +
+          (st.tpDaemonLog ? `最後の記録：${st.tpDaemonLog}` : '保存し直すか、再起動してください。') });
+      } else if (st.tpDaemon === 'pending') {
+        out.push({ warn: false, text: '割り当てたジェスチャーは、再起動後に使えます。' });
+      } else if (st.tpDaemon === 'unneeded') {
+        out.push({ warn: false, text: 'ジェスチャーが割り当てられていないため、常駐プログラムは動かしていません。' });
+      }
     }
     const touchApplied = takes(st.tpSaved) ? st.tpLive === st.tpSaved : !takes(st.tpLive);
     if (takes(st.tpSaved)) {

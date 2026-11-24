@@ -62,12 +62,20 @@ check 'a physical key with two modifiers is rejected' rejects 'mod 42 shift\nmod
 long=$(printf '%0300d' 0)
 check 'overlong lines are rejected' rejects "# $long\n" 'longer than 256'
 
-# Every threshold the table lists is accepted at its default and its ends, and refused just outside.
+# Every threshold the table lists is accepted at its default and its ends, and refused just outside
+# them and, for whole-number ones, with a fraction.
 thresholds_match_parser() {
     "$GESTURETOOL" thresholds > "$WORK/thresholds" && [ "$(wc -l < "$WORK/thresholds")" -eq 7 ] || return 1
-    while read -r name def min max; do
+    while read -r name def min max kind; do
         for v in "$def" "$min" "$max"; do accepts "$name $v\n" "$(printf "$DEFAULTS" | sed "s/^$name .*/$name $v/")\n" || return 1; done
         rejects "$name $(awk -v x="$max" 'BEGIN { print x + 1 }')\n" "$name must be" || return 1
+        if [ "$min" != 0 ]; then rejects "$name $(awk -v x="$min" 'BEGIN { print x - 0.1 }')\n" "$name must be" || return 1; fi
+        case "$kind" in
+            int) rejects "$name $min.5\n" 'whole number' || return 1 ;;
+            real) v=$(awk -v x="$min" 'BEGIN { print x + 0.25 }')
+                  accepts "$name $v\n" "$(printf "$DEFAULTS" | sed "s/^$name .*/$name $v/")\n" || return 1 ;;
+            *) echo "kind $kind"; return 1 ;;
+        esac
     done < "$WORK/thresholds"
     printf "$DEFAULTS" | awk '{ print $1, $2 }' > "$WORK/defaults"
     awk '{ print $1, $2 }' "$WORK/thresholds" | cmp - "$WORK/defaults"

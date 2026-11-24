@@ -219,7 +219,7 @@ void tg_config_print_thresholds(FILE *out)
         const struct threshold *t = &THRESHOLDS[i];
         const char *field = (const char *)&cfg + t->offset;
         double value = t->integer ? *(const int *)field : *(const double *)field;
-        fprintf(out, "%s %g %g %g\n", t->name, value, t->lo, t->hi);
+        fprintf(out, "%s %g %g %g %s\n", t->name, value, t->lo, t->hi, t->integer ? "int" : "real");
     }
 }
 

@@ -438,12 +438,18 @@ function touchName(id) {
   return KCM.gestureName(id);
 }
 
+function isThreshold(id) { return id.startsWith('tp:') && own(THRESHOLD_LABELS, id.slice(3)); }
+
 /** The value of touch setting ID as shown in the change list and the save summary; v may be undefined. */
 function touchText(id, v) {
   const name = id.slice(3);
   if (id === 'tp:mode') return touchLabel(v);
+  if (isThreshold(id)) {
+    if (v !== undefined) return v + ' ' + THRESHOLD_LABELS[name][1];
+    const t = touchThresholds.find((x) => x.name === name);
+    return t ? `既定（${t.def} ${THRESHOLD_LABELS[name][1]}）` : '既定';
+  }
   if (v === undefined) return 'なし';
-  if (own(THRESHOLD_LABELS, name)) return v + ' ' + THRESHOLD_LABELS[name][1];
   if (/^[123]_pass$/.test(name)) return 'ROMの標準の動作に渡す';
   return KCM.touchKeyText(v);
 }
@@ -475,6 +481,8 @@ function renderFingers() {
   $('fingerTabs').replaceChildren(...['1', '2', '3'].map((f) => {
     const n = gestureIds(f).length;
     const b = button(`${f}本指`, () => { touchFingers = f; touchGesture = null; render(); }, 'tab' + (f === touchFingers ? ' active' : ''));
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(f === touchFingers));
     if (own(map, `tp:${f}_pass`)) b.append(el('span', { className: 'badge', textContent: '標準' }));
     else if (n) b.append(el('span', { className: 'badge', textContent: String(n) }));
     return b;
@@ -486,6 +494,8 @@ function renderFingers() {
     const id = `tp:${touchFingers}_${g.id}`;
     const b = button('', () => { touchGesture = g.id; render(); },
       'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
+    b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : '割り当てなし'));
+    b.setAttribute('aria-pressed', String(touchGesture === g.id));
     // The group heading names the kind, so a button shows only its direction.
     b.append(el('small', { textContent: KCM.gestureName(id).replace(/^[123]本指で(なぞる|払う)?/, '') }),
       el('span', { textContent: own(map, id) ? KCM.touchKeyText(map[id]) : '—' }));
@@ -545,7 +555,8 @@ function renderThresholds() {
     $('thresholds').replaceChildren(...touchThresholds.filter((t) => own(THRESHOLD_LABELS, t.name)).map((t) => {
       const [label, unit, hint] = THRESHOLD_LABELS[t.name];
       const input = el('input', { type: 'text', inputMode: 'decimal', id: 'th_' + t.name, placeholder: String(t.def), autocomplete: 'off' });
-      input.onchange = () => setThreshold(t, input);
+      input.oninput = () => setThreshold(t, input, false);
+      input.onchange = () => setThreshold(t, input, true);
       return el('label', { className: 'threshold' }, el('span', { textContent: label }),
         el('span', { className: 'thinput' }, input, document.createTextNode(unit)),
         el('small', { textContent: `${hint}（既定 ${t.def}、${t.min}〜${t.max}）` }));
@@ -558,22 +569,38 @@ function renderThresholds() {
   }
 }
 
-function setThreshold(t, input) {
+/**
+ * Takes a threshold as it is typed (FINAL: the field was left). An invalid value is ignored while
+ * typing and put back when the field is left.
+ */
+function setThreshold(t, input, final) {
   const v = input.value.trim();
   const id = 'tp:' + t.name;
+  const [label, unit] = THRESHOLD_LABELS[t.name];
   if (v === '') {
     if (!own(map, id)) return;
     delete map[id];
-    changed(`${THRESHOLD_LABELS[t.name][0]}を既定値（${t.def}）に戻しました。`);
+    thresholdChanged(`${label}を既定値（${t.def} ${unit}）に戻しました。`);
     return;
   }
   if (!KCM.validThreshold(t, v)) {
+    if (!final) return;
     input.value = map[id] || '';
-    status(`${THRESHOLD_LABELS[t.name][0]}は${t.min}〜${t.max}の${t.name.endsWith('_ms') ? '整数' : '数'}で入力してください。`);
+    status(`${label}は${t.min}〜${t.max}の${t.integer ? '整数' : '数'}で入力してください。`);
     return;
   }
+  if (map[id] === v) return;
   map[id] = v;
-  changed(`${THRESHOLD_LABELS[t.name][0]}を${v} ${THRESHOLD_LABELS[t.name][1]}にしました。`);
+  thresholdChanged(`${label}を${v} ${unit}にしました。`);
+}
+
+/**
+ * Shows a threshold change without the full render(): leaving the field fires its change event on
+ * the tap that leaves it, and re-rendering would replace the button being tapped.
+ */
+function thresholdChanged(msg) {
+  renderChanges();
+  status(msg + 'しきい値だけの変更は、常駐プログラムが動いていれば、保存するとすぐ効きます。');
 }
 
 $('passFingers').onchange = async () => {
@@ -787,13 +814,16 @@ $('save').onclick = async () => {
       const plain = (v) => valueText(v).replace(/^→ /, '');
       return `${layerName(l)} + ${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
     });
-    if (!await ask('次の' + diff.length + '件を保存します。再起動後に反映されます。\n\n' + lines.join('\n'))) return;
+    // Thresholds are read by touchgestured, which save restarts; everything else is read at boot.
+    const onlyThresholds = diff.every((d) => isThreshold(d.id));
+    const when = onlyThresholds ? '常駐プログラムが動いていれば、すぐ効きます。' : '再起動後に反映されます。';
+    if (!await ask('次の' + diff.length + '件を保存します。' + when + '\n\n' + lines.join('\n'))) return;
     $('editor').disabled = true;
     const out = await bridge(['save', ...args]);
     saved = Object.assign(Object.create(null), map);
     const warnings = out.split('\n').filter((l) => l.startsWith('WARNING:')).map((l) => l.replace(/^WARNING: */, '注意：'));
-    status('保存しました。再起動すると反映されます。' + (warnings.length ? '\n' + warnings.join('\n') : ''));
-    if (await ask('保存しました。再起動すると反映されます。今すぐ再起動しますか？', '再起動する', 'あとで')) {
+    status('保存しました。' + (onlyThresholds ? when : '再起動すると反映されます。') + (warnings.length ? '\n' + warnings.join('\n') : ''));
+    if (!onlyThresholds && await ask('保存しました。再起動すると反映されます。今すぐ再起動しますか？', '再起動する', 'あとで')) {
       status('再起動しています…');
       // The device goes down before remap.sh can answer, so no reply is awaited.
       bridge(['reboot']).catch((e) => status('再起動できませんでした：' + e.message));
