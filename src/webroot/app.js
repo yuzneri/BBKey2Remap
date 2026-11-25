@@ -236,6 +236,7 @@ function renderTabs() {
   }));
   const ways = KCM.pressStates(current, available).map((s) => s.how);
   const name = layerName(current);
+  $('resetLayer').textContent = `「${layerName(current)}」の割り当てをリセット`;
   $('layerHint').textContent = (current === 'base' ? '修飾キーを押さないときの出力です。'
     : ways.includes('locked') ? `${name}中にキーを押したときの出力です。`
       : ways.includes('tapped') ? `${name}を押したまま（または一度押してから）キーを押したときの出力です。`
@@ -336,7 +337,7 @@ function renderPanel() {
   if (!CATEGORIES.some((c) => c.id === category)) category = 'cursor';
   const id = current + ':' + selected;
   const state = KCM.pressStates(current, available)[0];
-  $('target').textContent = (current === 'base' ? '' : layerName(current) + ' + ') + keyName(selected);
+  $('target').textContent = (current === 'base' ? '' : layerName(current) + '+') + keyName(selected);
   if (originalKcm) {
     const before = resultText(state.how, KCM.evaluate(originalKcm, selected, state.meta));
     const after = resultText(state.how, KCM.evaluate(shownKcm(), selected, state.meta));
@@ -417,17 +418,17 @@ function renderEffective() {
 const TOUCH_MODES = [
   { id: 'rom', label: 'ROMの標準', hint: 'キーボードの表面をなぞったときの動き（スクロールなど）は、ROMの標準のままです。' },
   { id: 'off', label: 'オフ', hint: 'キーボードの表面のタッチを使いません。キーを押す操作には影響しません。' },
-  { id: 'gesture', label: '独自ジェスチャー', hint: 'なぞる、払う、軽く叩く操作に、割り当てたキーを送ります。' },
+  { id: 'gesture', label: '独自ジェスチャー', hint: 'なぞる、払う、タップにキーを割り当てます。なぞるにはスクロールも割り当てられます。' },
 ];
 
 const THRESHOLD_LABELS = {
   start_mm: ['開始距離', 'mm', 'これだけ動くまで、なぞったとみなしません。最初のキーはここで送ります。'],
-  step_mm: ['1回の距離', 'mm', 'なぞり続けるとき、これだけ動くごとにキーを1回送ります。'],
+  step_mm: ['繰り返しの距離', 'mm', 'なぞり続けるとき、これだけ動くごとにキーを1回送ります。'],
   flick_mm_s: ['払う速さ', 'mm/秒', '動き始めてからの平均の速さがこれ以上なら、払ったとみなします。'],
   tap_ms: ['タップの最大時間', 'ms', '触れてから離すまでがこれ以下なら、タップとみなします。'],
-  hold_ms: ['触れてからの待ち時間', 'ms', '触れてからこの時間は、キーを送りません。'],
+  hold_ms: ['触れてからの待ち時間', 'ms', '触れてからこの時間が過ぎるまで、キーを送りません。これより短いタッチは無視します。'],
   gather_ms: ['指をそろえる時間', 'ms', '最初の指からこの時間内に触れた指を、同じ操作の指として数えます。'],
-  after_key_ms: ['キー入力後の無視時間', 'ms', 'キーを打ってからこの時間内に始まったタッチは無視します。'],
+  after_key_ms: ['キー入力後の無視時間', 'ms', 'キーを押してからこの時間内に始まったタッチは無視します。'],
 };
 
 function touchLabel(v) { return TOUCH_MODES.find((m) => m.id === (v || 'rom')).label; }
@@ -523,9 +524,9 @@ function renderFingers() {
     return b;
   }));
   const layerLabel = touchLayer && KCM.TOUCH_LAYERS.find((l) => l.id === touchLayer).label;
-  $('touchLayerHint').textContent = !touchLayer ? '修飾キーを押していないときの割り当てです。'
-    : `${layerLabel}を押している間の割り当てです。割り当てのないジェスチャーは、「通常」のキーを` +
-      `${touchLayer === 'sym' ? 'そのまま' : 'この修飾キーを付けて'}送ります（薄い表示）。` +
+  $('touchLayerHint').textContent = !touchLayer ? '修飾キーを押さないときの割り当てです。'
+    : `${layerLabel}を押している間の割り当てです。割り当てのないジェスチャーは「通常」の割り当て（薄い表示）を使い` +
+      `${touchLayer === 'sym' ? 'ます' : `、キーには${layerLabel}を付けて送ります`}。` +
       (available.has(touchLayer) ? '' : `今のキー配置には${layerLabel}を押せるキーがないため、この割り当ては使われません。`);
   $('fingerTabs').replaceChildren(...['1', '2', '3'].map((f) => {
     const n = gestureIds(f, touchLayer).length;
@@ -615,9 +616,9 @@ function renderGesturePanel() {
     'tab' + (c.id === touchCategory ? ' active' : ''))));
   const cat = cats.find((c) => c.id === touchCategory) || cats[0];
   if (cat.id === 'scroll') {
-    const b = button('システムのスクロール', () => {
+    const b = button('ROMのスクロール', () => {
       map[id] = KCM.TOUCH_SCROLL;
-      changed(`${KCM.gestureName(id)}をシステムのスクロールにしました。`);
+      changed(`${KCM.gestureName(id)}をROMのスクロールにしました。`);
     }, 'pal wide' + (scroll ? ' active' : ''));
     b.setAttribute('aria-pressed', String(scroll));
     $('gesturePalette').replaceChildren(b);
@@ -636,12 +637,12 @@ function renderGesturePanel() {
  * the touch goes to the ROM as soon as it moves that way.
  */
 function scrollHint(g, scroll) {
-  if (scroll) return 'この向きになぞり始めると、指を離すまでタッチをROMに渡し、ROMがスクロールします。同じ向きの払うは送られません。';
+  if (scroll) return 'この向きになぞり始めると、指を離すまでROMがスクロールします。同じ向きに払う操作は使われません。';
   if (!g.startsWith('flick_')) return '';
   const swipe = g.replace('flick_', 'swipe_');
   const sid = KCM.gestureId(touchLayer, touchFingers, swipe);
   const value = own(map, sid) ? map[sid] : fallbackValue(swipe);
-  return value === KCM.TOUCH_SCROLL ? `同じ向きのなぞる（${KCM.gestureName(sid)}）がスクロールなので、この払うは送られません。` : '';
+  return value === KCM.TOUCH_SCROLL ? `「${KCM.gestureName(sid)}」がスクロールなので、この向きに払う操作は使われません。` : '';
 }
 
 function setGestureKey(id, code, mods, once) {
@@ -652,7 +653,7 @@ function setGestureKey(id, code, mods, once) {
 /** The thresholds with touchgestured's defaults as placeholders; an empty field is the default. */
 function renderThresholds() {
   if (!touchThresholds.length) {
-    $('thresholds').replaceChildren(el('p', { className: 'hint', textContent: 'しきい値の既定値を読み込めませんでした。常駐プログラムがないか、動きません。' }));
+    $('thresholds').replaceChildren(el('p', { className: 'hint', textContent: 'しきい値の既定値を読み込めませんでした。常駐プログラムが見つからないか、起動できません。' }));
     return;
   }
   // Rebuilding the fields would drop the one being typed in, so only values not being edited are refreshed.
@@ -706,7 +707,7 @@ function setThreshold(t, input, final) {
 function thresholdChanged(msg) {
   renderViews();
   renderChanges();
-  status(msg + 'しきい値だけの変更は、常駐プログラムが動いていれば、保存するとすぐ効きます。');
+  status(msg + 'しきい値だけを変えたときは、常駐プログラムが動いていれば、保存するとすぐに効きます。');
 }
 
 $('passFingers').onchange = async () => {
@@ -757,21 +758,24 @@ function renderChanges() {
     const mode = id === 'tp:mode';
     const remove = button('✕', (e) => {
       e.stopPropagation(); delete map[id];
-      changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。' : `タッチ操作の${touchName(id)}をリセットしました。`);
+      changed(mode ? 'キーボードのタッチ操作をROMの標準に戻しました。'
+        : isThreshold(id) ? `${touchName(id)}を既定値に戻しました。`
+          : /^tp:[123]_pass$/.test(id) ? `${touchName(id)}の操作を独自ジェスチャーに戻しました。`
+            : `${touchName(id)}の割り当てを外しました。`);
     }, 'remove');
     remove.title = 'リセット';
     return el('tr', { onclick: () => showView('touch') },
       el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', { onclick: (e) => e.stopPropagation() }, remove));
   }));
-  fillChanges($('changesKeys'), ['レイヤー', 'キー', '出力', ''], rows.filter((r) => r.l !== 'tp').map(({ id, l, key, with_ }) => {
+  fillChanges($('changesKeys'), ['修飾キー', 'キー', '出力', ''], rows.filter((r) => r.l !== 'tp').map(({ id, l, key, with_ }) => {
     if (l === 'kl') {
       const remove = button('✕', (e) => { e.stopPropagation(); delete map[id]; changed(`${modName(key)}をリセットしました。`); }, 'remove');
       remove.title = 'リセット';
-      return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; showView('keys'); } }, el('td', { textContent: '修飾キー' }),
+      return el('tr', { onclick: () => { selectedMod = key; category = 'roles'; showView('keys'); } }, el('td', { textContent: '—' }),
         el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
         el('td', { onclick: (e) => e.stopPropagation() }, remove));
     }
-    const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)} + ${keyName(key)}をリセットしました。`); }, 'remove');
+    const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)}+${keyName(key)}をリセットしました。`); }, 'remove');
     remove.title = 'リセット';
     return el('tr', { onclick: () => { selected = key; selectedMod = null; view = 'keys'; setLayer(l); window.scrollTo(0, 0); } },
       el('td', { textContent: layerName(l) + (with_.length ? '（' + with_.map(layerName).join('、') + 'も）' : '') }),
@@ -800,7 +804,7 @@ function showView(v) {
   // A key pressed in another view must not change the key being edited, which is out of sight.
   if (capture) {
     setCapture('');
-    status('キーの取得をやめました。');
+    status('キーの読み取りをやめました。');
   }
   view = v;
   render();
@@ -909,14 +913,16 @@ $('reset').onclick = () => {
   changed(`${$('target').textContent}をリセットしました。`);
 };
 $('resetLayer').onclick = async () => {
-  if (!await ask(`${layerName(current)}レイヤーの変更をすべてリセットしますか？`)) return;
+  const roles = Object.keys(map).some((id) => id.startsWith('kl:') && KCM.layerOf(id) === current);
+  if (!await ask(`「${layerName(current)}」の割り当てをすべてリセットしますか？` +
+    (roles ? '修飾キー自体の割り当ての変更も元に戻ります。' : ''))) return;
   for (const id of Object.keys(map)) {
     if (KCM.layerOf(id) !== current) continue;
     const [l, key] = id.split(':');
     if (l === 'kl') delete map[id];
     else unassign(l, key);
   }
-  changed('このレイヤーをリセットしました。');
+  changed(`「${layerName(current)}」の割り当てをリセットしました。`);
 };
 $('resetAll').onclick = async () => {
   if (!await ask('すべての変更をリセットしますか？')) return;
@@ -952,11 +958,11 @@ $('save').onclick = async () => {
       if (l === 'kl') return `${modName(key)}の割り当て：${KCM.roleName(d.from || klBase[key])} → ${KCM.roleName(d.to || klBase[key])}`;
       if (l === 'tp') return `キーボードのタッチ操作${key === 'mode' ? '' : `（${touchName(d.id)}）`}：${touchText(d.id, d.from)} → ${touchText(d.id, d.to)}`;
       const plain = (v) => valueText(v).replace(/^→ /, '');
-      return `${layerName(l)} + ${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
+      return `${layerName(l)}+${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
     });
     // Thresholds are read by touchgestured, which save restarts; everything else is read at boot.
     const onlyThresholds = diff.every((d) => isThreshold(d.id));
-    const when = onlyThresholds ? '常駐プログラムが動いていれば、すぐ効きます。' : '再起動後に反映されます。';
+    const when = onlyThresholds ? '常駐プログラムが動いていれば、すぐに効きます。' : '再起動後に反映されます。';
     if (!await ask('次の' + diff.length + '件を保存します。' + when + '\n\n' + lines.join('\n'))) return;
     $('editor').disabled = true;
     const out = await bridge(['save', ...args]);
@@ -1010,7 +1016,7 @@ $('keytest').onkeydown = (e) => {
     await loadStatus();
     setLayer(current);
     $('editor').disabled = false;
-    status('読み込みました。レイヤーとキーを選び、パレットから出力を選んでください。');
+    status('読み込みました。修飾キーとキーを選び、出力を選んでください。');
     refreshPreview();
   } catch (e) {
     status('読み込めませんでした：' + e.message);

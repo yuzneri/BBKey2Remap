@@ -63,8 +63,8 @@
     DPAD_LEFT: 'カーソル左（←）', DPAD_DOWN: 'カーソル下（↓）', DPAD_UP: 'カーソル上（↑）', DPAD_RIGHT: 'カーソル右（→）', DPAD_CENTER: '決定',
     TAB: 'Tab', ESCAPE: 'Esc', MOVE_HOME: 'Home（行頭）', MOVE_END: 'End（行末）', PAGE_UP: 'Page Up',
     PAGE_DOWN: 'Page Down', INSERT: 'Insert', FORWARD_DEL: 'Delete', DEL: 'Backspace',
-    ENTER: 'Enter', SPACE: 'Space', LANGUAGE_SWITCH: 'IME切替',
-    SWITCH_CHARSET: '文字セット切替', BACK: '戻る', MENU: 'メニュー', SEARCH: '検索',
+    ENTER: 'Enter', SPACE: 'Space', LANGUAGE_SWITCH: 'IME切り替え',
+    SWITCH_CHARSET: '文字セット切り替え', BACK: '戻る', MENU: 'メニュー', SEARCH: '検索',
     HOME: 'ホーム画面',
   };
   for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') ACTIONS[c] = c;
@@ -153,12 +153,12 @@
   /** The setting ID of gesture G ("flick_up") of FINGERS ("2") in LAYER ("" or "shift"). */
   function gestureId(layer, fingers, g) { return `tp:${layer ? layer + '_' : ''}${fingers}_${g}`; }
 
-  /** "Shift＋2本指で払う↑" for a gesture setting ID such as "tp:shift_2_flick_up". */
+  /** "Shift+2本指で払う↑" for a gesture setting ID such as "tp:shift_2_flick_up". */
   function gestureName(id) {
     const m = /^tp:(?:(shift|alt|ctrl|sym)_)?([123])_(.*)$/.exec(id);
     const g = m && TOUCH_GESTURES.find((x) => x.id === m[3]);
     if (!g) return id;
-    const layer = m[1] ? TOUCH_LAYERS.find((l) => l.id === m[1]).label + '＋' : '';
+    const layer = m[1] ? TOUCH_LAYERS.find((l) => l.id === m[1]).label + '+' : '';
     return `${layer}${m[2]}本指で${TOUCH_KINDS[g.kind]}${ARROWS[g.dir] || ''}`;
   }
 
@@ -455,7 +455,7 @@
   function warnings({ layer, key, value, available, preview, sameAs = [] }) {
     const out = [];
     const missing = unreachableParts(layer, available);
-    if (missing.length) out.push(`この端末では押せない修飾（${missing.map(modifierLabel).join('、')}）を含むため、保存しても使えません。`);
+    if (missing.length) out.push(`この端末では押せない修飾キー（${missing.map(modifierLabel).join('、')}）を含むため、保存しても使えません。`);
     if (value === 'KEEP') return out;
     const parts = layer === 'base' ? [] : layer.split('+');
     const states = pressStates(layer, available);
@@ -464,7 +464,7 @@
     if (parts.length === 1 && /^[lr]?ctrl$/.test(parts[0]) && key.length === 1 && 'ACVXZ'.includes(key)) {
       out.push(`Ctrl+${key}はコピーや貼り付けなどに使われることが多い組み合わせです。`);
     }
-    if (key === 'SPACE' && parts.some((p) => /^[lr]?alt$/.test(p))) out.push('Alt+SpaceはIMEの入力切替などに使われることがあります。');
+    if (key === 'SPACE' && parts.some((p) => /^[lr]?alt$/.test(p))) out.push('Alt+SpaceはIMEの入力切り替えなどに使われることがあります。');
     if (!characterValue && states.some((s) => s.how !== 'held')) {
       out.push('キーの置き換えとフォールバックは、押したままの入力にだけ効きます。一度押しやShiftロックでは文字だけが使われます。');
     }
@@ -583,7 +583,7 @@
   }
 
   /** The caution shown for every change of a modifier key's role. */
-  const ROLE_NOTICE = 'この変更はすべてのレイヤーに効き、キーボード全体の動きが変わります。';
+  const ROLE_NOTICE = 'この変更は、どの修飾キーを押しているときにも効き、キーボード全体の動きが変わります。';
 
   const MODIFIER_NAMES = { shift: 'Shift', alt: 'Alt', ctrl: 'Ctrl', meta: 'Meta', sym: 'SYM', fn: 'Fn',
     capslock: 'CapsLock', numlock: 'NumLock', scrolllock: 'ScrollLock' };
@@ -628,8 +628,8 @@
     const lostLayer = (id) => { const m = /^tp:(shift|alt|ctrl|sym)_[123]_/.exec(id); return !!m && lost.includes(m[1]); };
     const stranded = Object.keys(map).filter((id) => (id.startsWith('tp:') ? lostLayer(id) : !id.startsWith('kl:') &&
       unreachableParts(id.split(':')[0], after).length > 0 && unreachableParts(id.split(':')[0], before).length === 0))
-      .map((id) => (id.startsWith('tp:') ? gestureName(id) : id));
-    if (stranded.length) out.push(`押せなくなるレイヤーに${stranded.length}件の割り当てがあります（${stranded.slice(0, 3).join('、')}${stranded.length > 3 ? 'など' : ''}）。`);
+      .map((id) => (id.startsWith('tp:') ? gestureName(id) : id.replace(/^(.*):/, (_, l) => l.split('+').map(modifierLabel).join('+') + '+')));
+    if (stranded.length) out.push(`押せなくなる修飾キーの組み合わせに${stranded.length}件の割り当てがあります（${stranded.slice(0, 3).join('、')}${stranded.length > 3 ? 'など' : ''}）。`);
     return out;
   }
 

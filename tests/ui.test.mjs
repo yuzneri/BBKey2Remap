@@ -73,7 +73,7 @@ test('effective rows cover every combination of the device modifiers and flag ch
 
 test('warnings name unreachable modifiers, ordinary typing, common shortcuts and Alt+Space', () => {
   const w = (layer, key, value) => KCM.warnings({ layer, key, value, available: KEY2 }).join('\n');
-  assert.match(w('ralt', 'Q', 'U_0041'), /押せない修飾（右Alt）/);
+  assert.match(w('ralt', 'Q', 'U_0041'), /押せない修飾キー（右Alt）/);
   assert.match(w('ralt', 'Q', 'KEEP'), /押せない修飾/);
   assert.match(w('base', 'Q', 'U_0041'), /通常の文字入力/);
   assert.match(w('ctrl', 'C', 'R_TAB'), /Ctrl\+C/);
@@ -117,7 +117,7 @@ test('gestures: the 9 of touchgestured, their names, and their key values', () =
   for (const bad of ['tp:meta_1_tap', 'tp:shift_1_pass', 'tp:shift_shift_1_tap', 'tp:_1_tap', 'tp:1_flick_upleft']) {
     assert.throws(() => KCM.validate({ [bad]: bad.endsWith('pass') ? 'on' : 'ENTER' }), bad);
   }
-  assert.equal(KCM.gestureName('tp:shift_2_flick_left'), 'Shift＋2本指で払う←');
+  assert.equal(KCM.gestureName('tp:shift_2_flick_left'), 'Shift+2本指で払う←');
   assert.equal(KCM.gestureId('sym', '3', 'tap'), 'tp:sym_3_tap');
   assert.equal(KCM.gestureId('', '1', 'swipe_up'), 'tp:1_swipe_up');
   assert.ok(KCM.validate({ 'tp:2_pass': 'on', 'tp:1_tap': 'ENTER' }));
@@ -329,10 +329,10 @@ test('modifier key roles decide which layers can be pressed, and losing one is w
   assert.deepEqual(swapped, { 42: 'SHIFT_LEFT', 56: 'ALT_LEFT', 100: 'CTRL_LEFT', 110: 'SYM' });
   const w = KCM.roleWarnings({ scan: '110', code: 'ESCAPE', base, map: { 'ctrl:C': 'R_TAB', 'sym:H': 'R_DPAD_LEFT' } });
   assert.match(w.join('\n'), /Ctrlを押せるキーがなくなります/);
-  assert.match(w.join('\n'), /押せなくなるレイヤーに1件の割り当てがあります（ctrl:C）/);
+  assert.match(w.join('\n'), /押せなくなる修飾キーの組み合わせに1件の割り当てがあります（Ctrl\+C）/);
   const fine = KCM.roleWarnings({ scan: '110', code: 'META_LEFT', base: { ...base, 110: 'CTRL_LEFT' }, map: {} });
   assert.match(fine.join('\n'), /Ctrlを押せるキーがなくなります/);
   assert.equal(KCM.roleWarnings({ scan: '42', code: 'SHIFT_RIGHT', base, map: {} }).length, 1, 'only the general notice');
   const sym = KCM.roleWarnings({ scan: '100', code: 'CTRL_RIGHT', base, map: { 'tp:sym_1_tap': 'ENTER', 'tp:shift_1_tap': 'TAB' } });
-  assert.match(sym.join('\n'), /押せなくなるレイヤーに1件の割り当てがあります（SYM＋1本指でタップ）/, sym.join('\n'));
+  assert.match(sym.join('\n'), /押せなくなる修飾キーの組み合わせに1件の割り当てがあります（SYM\+1本指でタップ）/, sym.join('\n'));
 });

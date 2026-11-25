@@ -10,9 +10,8 @@
 <body>
 <main>
 <header>
-<small>BLACKBERRY KEY2 · MAGISK · V1.1-DEV9</small>
-<h1>キーリマップ</h1>
-<p>レイヤー（一緒に押す修飾キー）とキーを選び、パレットから出力を選びます。</p>
+<small>BLACKBERRY KEY2 · MAGISK · V1.1-DEV10</small>
+<h1>KEY2 Remap</h1>
 </header>
 <div id="status" role="status">接続中…</div>
 <fieldset id="editor" disabled>
@@ -23,11 +22,11 @@
 </nav>
 <div id="view-keys" class="view" role="region" aria-label="キー">
 <section>
-<p class="rowlabel" id="tabsLabel">一緒に押す修飾キー</p>
+<p class="rowlabel" id="tabsLabel">一緒に押す修飾キー（数字は割り当てた数）</p>
 <div id="tabs" class="tabs" role="tablist" aria-labelledby="tabsLabel"></div>
 <div class="tabpanel">
 <details id="advanced">
-<summary>組み合わせや左右を指定する</summary>
+<summary>修飾キーの組み合わせや左右を指定する</summary>
 <div id="mods" class="mods"></div>
 <div id="extra" class="toolbar"></div>
 </details>
@@ -36,7 +35,7 @@
 </div>
 <div class="toolbar">
 <button id="pickSource" type="button">キーを押して選ぶ</button>
-<button id="resetLayer" type="button">このレイヤーをリセット</button>
+<button id="resetLayer" type="button">「通常」の割り当てをリセット</button>
 </div>
 </section>
 <section id="panel" hidden>
@@ -51,28 +50,28 @@
 <div id="cats" class="tabs"></div>
 <div id="palette" class="palette"></div>
 <details id="allCombos">
-<summary>このキーの全組み合わせの出力</summary>
+<summary>このキーの、修飾キーの組み合わせごとの出力</summary>
 <div id="effective"></div>
 </details>
 </section>
 <section>
 <h2>キー入力テスト</h2>
-<p class="hint">下の枠を押してからキーを押すと、この画面に届いたキーの情報を表示します。保存した設定を再起動後に確かめる目安です。IMEやほかのアプリでの動きまでは確かめられません。</p>
+<p class="hint">下の枠を押してからキーを押すと、この画面に届いたキーを表示します。保存した設定を再起動後に確かめるのに使えます。IMEやほかのアプリでの動きまでは分かりません。</p>
 <div id="keytest" class="keytest" tabindex="0" role="button">ここを押してからキーを押す</div>
 <pre id="keylog"></pre>
 </section>
 </div>
 <div id="view-touch" class="view" role="region" aria-label="タッチ操作" hidden>
 <section>
-<h2>キーボードのタッチ操作</h2>
-<div id="touchModes" class="choices" role="radiogroup" aria-label="キーボードのタッチ操作"></div>
+<h2 id="touchTitle">キーボードの表面のタッチ</h2>
+<div id="touchModes" class="choices" role="radiogroup" aria-labelledby="touchTitle"></div>
 <p id="touchHint" class="hint"></p>
 <div id="gestureEditor" hidden>
-<p class="rowlabel" id="layerTabsLabel">一緒に押す修飾キー</p>
+<p class="rowlabel" id="layerTabsLabel">一緒に押す修飾キー（数字は割り当てた数）</p>
 <div id="layerTabs" class="tabs" role="radiogroup" aria-labelledby="layerTabsLabel"></div>
 <div class="tabpanel outer">
 <p id="touchLayerHint" class="hint"></p>
-<p class="rowlabel" id="fingerTabsLabel">指の本数</p>
+<p class="rowlabel" id="fingerTabsLabel">指の本数（数字は割り当てた数）</p>
 <div id="fingerTabs" class="tabs" role="radiogroup" aria-labelledby="fingerTabsLabel"></div>
 <div class="tabpanel">
 <label id="passBox" class="check"><input id="passFingers" type="checkbox"><span id="passLabel"></span></label>
@@ -93,7 +92,7 @@
 </div>
 <details id="thresholdBox">
 <summary>しきい値（誤動作を減らす）</summary>
-<p class="hint">空欄は既定値です。しきい値だけの変更は、保存するとすぐ効きます。</p>
+<p class="hint">空欄は既定値です。しきい値だけを変えたときは、保存するとすぐに効きます。</p>
 <div id="thresholds" class="thresholds"></div>
 </details>
 </div>
@@ -102,7 +101,7 @@
 <div id="view-changes" class="view" role="region" aria-label="変更と診断" hidden>
 <section>
 <h2>変更一覧</h2>
-<p class="hint">保存後に再起動するか確認します。モジュールを無効化して再起動すると、導入前の状態に戻ります。</p>
+<p class="hint">元の状態から変えた設定の一覧です（保存済みのものも含みます）。行を押すと、その画面に移ります。</p>
 <h3>キー</h3>
 <table id="changesKeys" class="changes"></table>
 <h3>タッチ操作</h3>
@@ -121,6 +120,7 @@
 </section>
 <section>
 <h2>診断</h2>
+<p class="hint">モジュールを無効にして再起動すると、導入前の状態に戻ります。</p>
 <ul id="diagnostics"></ul>
 <button id="recheck" type="button">再確認</button>
 </section>
