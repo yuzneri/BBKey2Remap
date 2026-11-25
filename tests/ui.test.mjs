@@ -327,12 +327,13 @@ test('modifier key roles decide which layers can be pressed, and losing one is w
   assert.ok(!now.has('rshift'), 'the KEY2 has no right Shift key even though stmpe.kl maps scan code 54');
   const swapped = KCM.rolesOf(base, { 'kl:100': 'CTRL_LEFT', 'kl:110': 'SYM' });
   assert.deepEqual(swapped, { 42: 'SHIFT_LEFT', 56: 'ALT_LEFT', 100: 'CTRL_LEFT', 110: 'SYM' });
-  const w = KCM.roleWarnings({ scan: '110', code: 'ESCAPE', base, map: { 'ctrl:C': 'R_TAB', 'sym:H': 'R_DPAD_LEFT' } });
+  const nameOf = (id) => `<${id}>`;
+  const w = KCM.roleWarnings({ scan: '110', code: 'ESCAPE', base, map: { 'ctrl:C': 'R_TAB', 'sym:H': 'R_DPAD_LEFT', 'lalt+ctrl:Q': 'R_TAB' }, nameOf });
   assert.match(w.join('\n'), /Ctrlを押せるキーがなくなります/);
-  assert.match(w.join('\n'), /押せなくなる修飾キーの組み合わせに1件の割り当てがあります（Ctrl\+C）/);
+  assert.match(w.join('\n'), /押せなくなる修飾キーの組み合わせに2件の割り当てがあります（<ctrl:C>、<lalt\+ctrl:Q>）/);
   const fine = KCM.roleWarnings({ scan: '110', code: 'META_LEFT', base: { ...base, 110: 'CTRL_LEFT' }, map: {} });
   assert.match(fine.join('\n'), /Ctrlを押せるキーがなくなります/);
   assert.equal(KCM.roleWarnings({ scan: '42', code: 'SHIFT_RIGHT', base, map: {} }).length, 1, 'only the general notice');
-  const sym = KCM.roleWarnings({ scan: '100', code: 'CTRL_RIGHT', base, map: { 'tp:sym_1_tap': 'ENTER', 'tp:shift_1_tap': 'TAB' } });
-  assert.match(sym.join('\n'), /押せなくなる修飾キーの組み合わせに1件の割り当てがあります（SYM\+1本指でタップ）/, sym.join('\n'));
+  const sym = KCM.roleWarnings({ scan: '100', code: 'CTRL_RIGHT', base, map: { 'tp:sym_1_tap': 'ENTER', 'tp:shift_1_tap': 'TAB' }, nameOf });
+  assert.match(sym.join('\n'), /押せなくなる修飾キーの組み合わせに1件の割り当てがあります（<tp:sym_1_tap>）/, sym.join('\n'));
 });

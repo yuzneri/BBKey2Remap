@@ -110,6 +110,16 @@ function button(text, fn, className = '') {
 
 function keyName(k) { return NAMES[k] || k; }
 
+/** "Shift+Q" for KEY in layer L, or "Q" in the base layer. */
+function comboName(l, key) { return (l === 'base' ? '' : layerName(l) + '+') + keyName(key); }
+
+/** The display name of an assignment ID ("ctrl:C", "tp:sym_1_tap"). */
+function assignmentName(id) {
+  if (id.startsWith('tp:')) return KCM.gestureName(id);
+  const [l, key] = id.split(':');
+  return comboName(l, key);
+}
+
 function layerName(l) {
   if (l === 'base') return '通常';
   if (l === 'capslock' && !available.has('CAPS_LOCK')) return 'Shiftロック';
@@ -299,7 +309,7 @@ function renderRolePanel(scan) {
   $('current').textContent = own(map, id) ? `元：${KCM.roleName(klBase[scan])} → 新：${KCM.roleName(code)}`
     : `今の割り当て：${KCM.roleName(code)}（変更なし）`;
   $('reset').disabled = !own(map, id);
-  const list = own(map, id) ? KCM.roleWarnings({ scan, code, base: klBase, map: { ...map, [id]: undefined } })
+  const list = own(map, id) ? KCM.roleWarnings({ scan, code, base: klBase, map: { ...map, [id]: undefined }, nameOf: assignmentName })
     : [KCM.ROLE_NOTICE];
   if (!klEditable) list.unshift('元のキー配置が保存されていないため、修飾キーの割り当ては変えられません。モジュールを入れ直してください。');
   $('warnings').replaceChildren(...list.map((w) => el('li', { textContent: w })));
@@ -337,7 +347,7 @@ function renderPanel() {
   if (!CATEGORIES.some((c) => c.id === category)) category = 'cursor';
   const id = current + ':' + selected;
   const state = KCM.pressStates(current, available)[0];
-  $('target').textContent = (current === 'base' ? '' : layerName(current) + '+') + keyName(selected);
+  $('target').textContent = comboName(current, selected);
   if (originalKcm) {
     const before = resultText(state.how, KCM.evaluate(originalKcm, selected, state.meta));
     const after = resultText(state.how, KCM.evaluate(shownKcm(), selected, state.meta));
@@ -763,7 +773,7 @@ function renderChanges() {
           : /^tp:[123]_pass$/.test(id) ? `${touchName(id)}の操作を独自ジェスチャーに戻しました。`
             : `${touchName(id)}の割り当てを外しました。`);
     }, 'remove');
-    remove.title = 'リセット';
+    remove.title = mode || /^tp:[123]_pass$/.test(id) ? '元に戻す' : isThreshold(id) ? '既定値に戻す' : '割り当てを外す';
     return el('tr', { onclick: () => showView('touch') },
       el('td', { textContent: touchName(id) }), el('td', { textContent: touchText(id, map[id]) }), el('td', { onclick: (e) => e.stopPropagation() }, remove));
   }));
@@ -775,7 +785,7 @@ function renderChanges() {
         el('td', { textContent: PHYSICAL[key] }), el('td', { textContent: valueText(map[id], id) + '（元：' + KCM.roleName(klBase[key]) + '）' }),
         el('td', { onclick: (e) => e.stopPropagation() }, remove));
     }
-    const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${layerName(l)}+${keyName(key)}をリセットしました。`); }, 'remove');
+    const remove = button('✕', (e) => { e.stopPropagation(); unassign(l, key); changed(`${comboName(l, key)}をリセットしました。`); }, 'remove');
     remove.title = 'リセット';
     return el('tr', { onclick: () => { selected = key; selectedMod = null; view = 'keys'; setLayer(l); window.scrollTo(0, 0); } },
       el('td', { textContent: layerName(l) + (with_.length ? '（' + with_.map(layerName).join('、') + 'も）' : '') }),
@@ -958,7 +968,7 @@ $('save').onclick = async () => {
       if (l === 'kl') return `${modName(key)}の割り当て：${KCM.roleName(d.from || klBase[key])} → ${KCM.roleName(d.to || klBase[key])}`;
       if (l === 'tp') return `キーボードのタッチ操作${key === 'mode' ? '' : `（${touchName(d.id)}）`}：${touchText(d.id, d.from)} → ${touchText(d.id, d.to)}`;
       const plain = (v) => valueText(v).replace(/^→ /, '');
-      return `${layerName(l)}+${keyName(key)}：${plain(d.from)} → ${plain(d.to)}`;
+      return `${comboName(l, key)}：${plain(d.from)} → ${plain(d.to)}`;
     });
     // Thresholds are read by touchgestured, which save restarts; everything else is read at boot.
     const onlyThresholds = diff.every((d) => isThreshold(d.id));

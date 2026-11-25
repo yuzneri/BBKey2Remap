@@ -616,9 +616,9 @@
 
   /**
    * Cautions for giving physical modifier key SCAN the role CODE: modifiers no longer on any key,
-   * and character map assignments in MAP that become unreachable.
+   * and character map assignments in MAP that become unreachable, named by NAMEOF(id).
    */
-  function roleWarnings({ scan, code, base, map }) {
+  function roleWarnings({ scan, code, base, map, nameOf = (id) => id }) {
     const out = [ROLE_NOTICE];
     const before = availableFromRoles(rolesOf(base, map));
     const after = availableFromRoles(rolesOf(base, { ...map, ['kl:' + scan]: code }));
@@ -628,7 +628,7 @@
     const lostLayer = (id) => { const m = /^tp:(shift|alt|ctrl|sym)_[123]_/.exec(id); return !!m && lost.includes(m[1]); };
     const stranded = Object.keys(map).filter((id) => (id.startsWith('tp:') ? lostLayer(id) : !id.startsWith('kl:') &&
       unreachableParts(id.split(':')[0], after).length > 0 && unreachableParts(id.split(':')[0], before).length === 0))
-      .map((id) => (id.startsWith('tp:') ? gestureName(id) : id.replace(/^(.*):/, (_, l) => l.split('+').map(modifierLabel).join('+') + '+')));
+      .map(nameOf);
     if (stranded.length) out.push(`押せなくなる修飾キーの組み合わせに${stranded.length}件の割り当てがあります（${stranded.slice(0, 3).join('、')}${stranded.length > 3 ? 'など' : ''}）。`);
     return out;
   }
