@@ -145,7 +145,9 @@ if [ "\$1" = thresholds ]; then exec "$GESTURETOOL" thresholds; fi
 echo "\$\$ \$*" >> "$1/daemon.calls"
 echo "touchgestured: stub running" >&2
 trap 'echo "touchgestured: stub stopped" >&2; exit 0' TERM
-while :; do sleep 1; done
+trap 'if [ -e "$1/reload.fails" ]; then echo "touchgestured: stub cannot read" >&2; exit 1; fi; echo "\$\$ reload" >> "$1/daemon.calls"' HUP
+# wait, unlike a foreground sleep, returns as soon as a signal arrives, so the traps run at once.
+while :; do sleep 1 & wait \$!; done
 STUB
     chmod 0755 "$1/bin/touchgestured"
 }

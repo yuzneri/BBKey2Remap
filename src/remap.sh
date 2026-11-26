@@ -7,7 +7,8 @@
 #   remap.sh status               installation diagnostics as key=value lines
 #   remap.sh verify               check that the stored originals can be regenerated
 #   remap.sh reboot               reboot the device so that saved maps take effect
-#   remap.sh touch-start          (re)start touchgestured if gesture mode is saved and in effect
+#   remap.sh touch-start          start touchgestured if gesture mode is saved and in effect, or
+#                                 make the running one read its settings again
 #   remap.sh touch-stop           stop touchgestured
 # ASSIGN is MODIFIERS:KEY=VALUE for the character map, e.g. sym:H=R_DPAD_LEFT (validated again
 # by patch.awk), or kl:SCANCODE=KEYCODE for a modifier key's role in the key layout, e.g.
@@ -235,16 +236,25 @@ touch_state() {
     else echo ready; fi
 }
 
-# touch_start: (re)start touchgestured when ready, stop it when it is not wanted. While pending, a
-# running daemon keeps the settings that match the live key layouts until the reboot. Outside the
-# active module directory (a pending update being installed) nothing changes: the running module's
-# daemon stays until the reboot. Fails if the daemon cannot be (re)started.
+# touch_start: start touchgestured when ready, or have the running one read its settings again
+# (SIGHUP), and stop it when it is not wanted. The running one is not restarted, since its virtual
+# touchpad must stay: the ROM of LineageOS 22.2 picks the touchpad it scrolls with once per app, and
+# would not scroll with a new one in the apps already running. While pending, a running daemon
+# keeps the settings that match the live key layouts until the reboot. Outside the active module
+# directory (a pending update being installed) nothing changes: the running module's daemon stays
+# until the reboot. Fails if the daemon cannot be started.
 touch_start() {
     [ "$BASE" = "$(cd "$R/data/adb/modules/$MODID" 2>/dev/null && pwd -P)" ] || return 0
     case "$(touch_state)" in
         off|unneeded) touch_stop; return ;;
         pending) return 0 ;;
     esac
+    pid=$(touch_pid)
+    if [ -n "$pid" ] && kill -HUP "$pid" 2>/dev/null; then
+        sleep 0.2
+        # One that cannot read the new settings exits; the one started below reports why.
+        [ -z "$(touch_pid)" ] || return 0
+    fi
     touch_stop || return 1
     # setsid detaches it from the WebUI's shell, which may be killed once the command returns.
     if command -v setsid >/dev/null; then detach=setsid; else detach=; fi
@@ -443,5 +453,5 @@ fi
 sync
 # Changed thresholds take effect now. New gesture keys and modes need the reboot like the other
 # files, since Android reads key layouts and the excluded device list at boot.
-touch_start || echo "WARNING: 保存しましたが、タッチ操作の常駐プログラムを起動し直せませんでした。$(tail -n 1 "$TG_LOG" 2>/dev/null)"
+touch_start || echo "WARNING: 保存しましたが、タッチ操作の常駐プログラムを起動できませんでした。$(tail -n 1 "$TG_LOG" 2>/dev/null)"
 echo OK

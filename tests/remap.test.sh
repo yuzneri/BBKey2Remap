@@ -421,19 +421,29 @@ check 'touch-start starts touchgestured with the saved settings once gesture mod
 # The live key layouts are the ones mounted at boot: a restarted daemon must not send gestures that
 # the live gesture key layout does not map yet, nor use modifier keys the live stmpe.kl does not have.
 save_keeps_daemon_until_layouts_are_live() {
-    old=$(daemon_pid)
+    old=$(daemon_pid) && before=$(wc -l < "$MOD/daemon.calls")
     remap save tp:mode=gesture tp:step_mm=4 tp:1_tap=ENTER tp:2_tap=SPACE >/dev/null && sleep 0.5 &&
-        [ "$(daemon_pid)" = "$old" ] && alive "$old"
+        [ "$(daemon_pid)" = "$old" ] && alive "$old" &&
+        ! tail -n +"$((before + 1))" "$MOD/daemon.calls" | grep -qx "$old reload"
 }
 check 'save keeps the running touchgestured while the saved gesture key layout is not live yet' save_keeps_daemon_until_layouts_are_live
 # The gestures of the last save, whose key layout the tests below make live.
 SAME='tp:mode=gesture tp:1_tap=ENTER tp:2_tap=SPACE'
-save_restarts_daemon() {
-    live_key_layouts && old=$(daemon_pid)
-    set -f; remap save $SAME tp:step_mm=2 >/dev/null; rc=$?; set +f; [ "$rc" -eq 0 ] && sleep 0.5 && new=$(daemon_pid) &&
-        [ -n "$new" ] && [ "$new" != "$old" ] && alive "$new" && ! alive "$old" && grep -qx 'step_mm 2' "$DST_TG_CONF"
+# The running daemon is kept so that its virtual touchpad, which the ROM of LineageOS 22.2 scrolls
+# with, stays the same device.
+save_reloads_daemon() {
+    live_key_layouts && old=$(daemon_pid) && before=$(wc -l < "$MOD/daemon.calls")
+    set -f; remap save $SAME tp:step_mm=2 >/dev/null; rc=$?; set +f; [ "$rc" -eq 0 ] && sleep 0.5 &&
+        [ "$(daemon_pid)" = "$old" ] && alive "$old" &&
+        tail -n +"$((before + 1))" "$MOD/daemon.calls" | grep -qx "$old reload" && grep -qx 'step_mm 2' "$DST_TG_CONF"
 }
-check 'save restarts touchgestured when only its settings changed, so thresholds work without a reboot' save_restarts_daemon
+check 'save makes the running touchgestured read its changed settings, without restarting it' save_reloads_daemon
+failed_reload_starts_daemon() {
+    old=$(daemon_pid) && : > "$MOD/reload.fails"
+    set -f; remap save $SAME tp:step_mm=3 >/dev/null; rc=$?; set +f; rm -f "$MOD/reload.fails"
+    [ "$rc" -eq 0 ] && sleep 0.5 && new=$(daemon_pid) && [ -n "$new" ] && [ "$new" != "$old" ] && alive "$new" && ! alive "$old"
+}
+check 'save starts touchgestured again when the running one cannot read the new settings' failed_reload_starts_daemon
 daemon_detached() {
     pid=$(daemon_pid) && [ "$(cut -d' ' -f6 "/proc/$pid/stat")" != "$(cut -d' ' -f6 /proc/$$/stat)" ]
 }

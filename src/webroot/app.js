@@ -970,7 +970,7 @@ $('save').onclick = async () => {
       const plain = (v) => valueText(v).replace(/^→ /, '');
       return `${comboName(l, key)}：${plain(d.from)} → ${plain(d.to)}`;
     });
-    // Thresholds are read by touchgestured, which save restarts; everything else is read at boot.
+    // Thresholds are read again by the running touchgestured on save; everything else is read at boot.
     const onlyThresholds = diff.every((d) => isThreshold(d.id));
     const when = onlyThresholds ? '常駐プログラムが動いていれば、すぐに効きます。' : '再起動後に反映されます。';
     if (!await ask('次の' + diff.length + '件を保存します。' + when + '\n\n' + lines.join('\n'))) return;
