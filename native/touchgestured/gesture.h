@@ -81,6 +81,13 @@ struct tg_state {
 void tg_init(struct tg_state *st, const struct tg_config *cfg, double units_per_mm, const struct tg_sink *sink);
 
 /*
+ * Replaces the settings at t_us, keeping the fingers and the held modifiers. A touch in progress
+ * is abandoned as for SYN_DROPPED (a passed-through one is lifted on the virtual touchpad), and its
+ * fingers are ignored until lifted.
+ */
+void tg_set_config(struct tg_state *st, int64_t t_us, const struct tg_config *cfg);
+
+/*
  * Feeds one event of touch_keypad; time is first advanced to the event's timestamp. SYN_DROPPED
  * abandons the current touch and ignores events up to the next SYN_REPORT; the caller should then
  * discard the events still queued, which are older than the kernel's state, and call tg_resync.

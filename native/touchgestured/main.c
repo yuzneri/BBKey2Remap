@@ -1,6 +1,6 @@
 /*
  * touchgestured: recognises gestures on the KEY2 keyboard surface and sends them as keys.
- *   touchgestured CONFIG [--touch NAME] [--keys NAME]
+ *   touchgestured CONFIG [--touch NAME] [--keys NAME]   (SIGHUP reads CONFIG again)
  *   touchgestured check CONFIG    validate CONFIG and exit (0 when it would be accepted)
  *   touchgestured thresholds      print "NAME DEFAULT MIN MAX int|real" for each threshold
  * It reads the touch surface (default "touch_keypad", which Android must ignore through
@@ -34,18 +34,23 @@
 
 static const uint16_t MOD_KEYS[4] = { KEY_LEFTCTRL, KEY_LEFTSHIFT, KEY_LEFTALT, KEY_LEFTMETA };
 
-static volatile sig_atomic_t stopping;
+static volatile sig_atomic_t stopping, reloading;
 
 struct daemon {
     struct tg_config cfg;
     struct tg_state st;
     const char *touch_name, *keys_name;
     int touch_fd, keys_fd, kbd_fd, pad_fd;
+    unsigned long kbd_keys[KEY_CNT / BITS_LONG + 1]; /* the keys the virtual keyboard was made with */
     bool passes;             /* some touches may go to the virtual touchpad (pass or scroll) */
     bool ready;              /* st is set up (on the first opening of the surface) */
 };
 
-static void on_signal(int sig) { (void)sig; stopping = 1; }
+static void on_signal(int sig)
+{
+    if (sig == SIGHUP) reloading = 1;
+    else stopping = 1;
+}
 
 static int64_t now_us(void)
 {
@@ -107,19 +112,29 @@ static int create_device(int fd, const struct input_id *id, const char *name)
 }
 
 /*
- * The gesture keyboard has only the bound scancodes and the four left modifiers, so Android does
- * not take it for a full keyboard. Vendor and product stay 0 so the key layout is found by name.
+ * The keys of the gesture keyboard: only the bound scancodes and the four left modifiers, so
+ * Android does not take it for a full keyboard. keys has KEY_CNT bits.
  */
-static int create_keyboard(const struct tg_config *cfg)
+static void keyboard_keys(const struct tg_config *cfg, unsigned long *keys)
+{
+    memset(keys, 0, (KEY_CNT / BITS_LONG + 1) * sizeof *keys);
+    for (int i = 0; i < 4; i++) keys[MOD_KEYS[i] / BITS_LONG] |= 1UL << (MOD_KEYS[i] % BITS_LONG);
+    for (int l = 0; l < TG_LAYER_COUNT; l++)
+        for (int f = 0; f < TG_MAX_FINGERS; f++)
+            for (int g = 0; g < TG_GESTURE_COUNT; g++) {
+                unsigned sc = cfg->bind[l][f][g].scancode;
+                if (sc) keys[sc / BITS_LONG] |= 1UL << (sc % BITS_LONG);
+            }
+}
+
+/* Vendor and product stay 0 so the key layout is found by name. keys: from keyboard_keys. */
+static int create_keyboard(const unsigned long *keys)
 {
     int fd = open("/dev/uinput", O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) { fprintf(stderr, "touchgestured: /dev/uinput: %s\n", strerror(errno)); return -1; }
     ioctl(fd, UI_SET_EVBIT, EV_KEY);
-    for (int i = 0; i < 4; i++) ioctl(fd, UI_SET_KEYBIT, MOD_KEYS[i]);
-    for (int l = 0; l < TG_LAYER_COUNT; l++)
-        for (int f = 0; f < TG_MAX_FINGERS; f++)
-            for (int g = 0; g < TG_GESTURE_COUNT; g++)
-                if (cfg->bind[l][f][g].scancode) ioctl(fd, UI_SET_KEYBIT, cfg->bind[l][f][g].scancode);
+    for (int k = 0; k < KEY_CNT; k++)
+        if (TEST_BIT(keys, k)) ioctl(fd, UI_SET_KEYBIT, k);
     struct input_id id = { .bustype = BUS_VIRTUAL };
     if (create_device(fd, &id, KEYBOARD_NAME)) { close(fd); return -1; }
     return fd;
@@ -342,6 +357,33 @@ static int load_config(const char *path, struct tg_config *cfg)
     return rc;
 }
 
+/*
+ * Reads the settings file again, for SIGHUP. The virtual touchpad stays: the ROM of LineageOS 22.2
+ * picks the touchpad it scrolls with once per app, so one made again would not scroll in the apps
+ * already running. The keyboard is made again only when the keys it must send change. Returns -1
+ * when the new settings cannot be put in effect; the caller then exits rather than go on with the
+ * old ones, so the status shows the failure.
+ */
+static int reload(struct daemon *d, const char *path)
+{
+    struct tg_config cfg;
+    if (load_config(path, &cfg)) return -1;
+    unsigned long keys[KEY_CNT / BITS_LONG + 1];
+    keyboard_keys(&cfg, keys);
+    if (memcmp(keys, d->kbd_keys, sizeof keys)) {
+        destroy_device(&d->kbd_fd);
+        if ((d->kbd_fd = create_keyboard(keys)) < 0) return -1;
+        memcpy(d->kbd_keys, keys, sizeof keys);
+    }
+    d->cfg = cfg;
+    d->passes = tg_config_passes(&cfg);
+    /* Without the surface open, open_touch makes the touchpad when it opens it. */
+    if (d->passes && d->pad_fd < 0 && d->touch_fd >= 0 && (d->pad_fd = create_touchpad(d->touch_fd)) < 0) return -1;
+    if (d->ready) tg_set_config(&d->st, now_us(), &cfg);
+    fprintf(stderr, "touchgestured: read %s again\n", path);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static struct daemon d = { .touch_name = "touch_keypad", .keys_name = "stmpe_keypad",
@@ -373,12 +415,14 @@ int main(int argc, char **argv)
     sigaction(SIGINT, &sa, NULL);
     sigaction(SIGHUP, &sa, NULL);
 
-    d.kbd_fd = create_keyboard(&d.cfg);
+    keyboard_keys(&d.cfg, d.kbd_keys);
+    d.kbd_fd = create_keyboard(d.kbd_keys);
     if (d.kbd_fd < 0) return 1;
     d.passes = tg_config_passes(&d.cfg);
 
     int64_t retry_at = 0;
-    while (!stopping) {
+    bool failed = false;
+    while (!stopping && !failed) {
         if (now_us() >= retry_at && (d.touch_fd < 0 || d.keys_fd < 0)) {
             if (d.touch_fd < 0) open_touch(&d);
             /* Key events need the recogniser, which the surface's resolution sets up. */
@@ -397,6 +441,7 @@ int main(int argc, char **argv)
         }
         if (ppoll(fds, 2, tp, &waiting) < 0 && errno != EINTR) {
             fprintf(stderr, "touchgestured: ppoll: %s\n", strerror(errno));
+            failed = true;
             break;
         }
         touch.n = touch.next = keys.n = keys.next = 0;
@@ -405,10 +450,15 @@ int main(int argc, char **argv)
         dispatch(&d, &touch, &keys);
         /* After the events, which carry earlier times, so deadlines are not taken out of order. */
         if (d.ready) tg_advance(&d.st, now_us());
+        /* After the events, which were made under the old settings. */
+        if (reloading) {
+            reloading = 0;
+            failed = reload(&d, argv[1]) < 0;
+        }
     }
     destroy_device(&d.pad_fd);
     destroy_device(&d.kbd_fd);
-    return stopping ? 0 : 1;
+    return failed ? 1 : 0;
 
 usage:
     fprintf(stderr, "usage: touchgestured CONFIG [--touch NAME] [--keys NAME]\n"

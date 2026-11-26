@@ -12,7 +12,8 @@
  *       their original time and getevent's names and hexadecimal values.
  *       Two pseudo events stand for what the daemon reads from the kernel: "RESYNC CURRENT_SLOT
  *       ID:X:Y|-1 ..." on the touch surface (tg_resync) and "HELD SCANCODE ..." on the keyboard
- *       (tg_set_held_keys).
+ *       (tg_set_held_keys). A third, "CONFIG PATH" on the touch surface, reads the settings file
+ *       PATH as the daemon does on SIGHUP (tg_set_config).
  */
 #include "config.h"
 #include "gesture.h"
@@ -200,6 +201,15 @@ static bool parse_held(const struct line *l, struct tg_state *st)
     return true;
 }
 
+/* "CONFIG PATH": the settings file the daemon reads again on SIGHUP; load prints why it fails. */
+static bool parse_config(const struct line *l, struct tg_state *st)
+{
+    struct tg_config next;
+    if (l->nwords != 2 || load(l->word[1], &next)) return false;
+    tg_set_config(st, l->t_us, &next);
+    return true;
+}
+
 static int replay(const struct tg_config *cfg, const char *path, double resolution, const char *touch, const char *keys)
 {
     FILE *in = fopen(path, "r");
@@ -217,6 +227,7 @@ static int replay(const struct tg_config *cfg, const char *path, double resoluti
         bool ok = l.nwords > 0;
         if (ok && !strcmp(l.word[0], "RESYNC")) ok = l.src == FROM_TOUCH && parse_resync(&l, &st);
         else if (ok && !strcmp(l.word[0], "HELD")) ok = l.src == FROM_KEYS && parse_held(&l, &st);
+        else if (ok && !strcmp(l.word[0], "CONFIG")) ok = l.src == FROM_TOUCH && parse_config(&l, &st);
         else if (ok && (ok = parse_event(&l, &ev))) {
             if (l.src == FROM_KEYS) tg_key_event(&st, &ev);
             else tg_touch_event(&st, &ev);

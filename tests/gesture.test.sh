@@ -652,6 +652,45 @@ check 'a modifier release lost with the keyboard is cleared by HELD' replays_key
 check 'a modifier already held when the keyboard is opened is added' replays_keys "$MODS$SWIPES" \
     "$(stroke 500 600 100,200 163,200)600 -0\n" '' '470 1-finger swipe right key 0x4 shift\n' 'HELD 42'
 
+# What the daemon does on SIGHUP: it reads the settings file again (CONFIG PATH, at the line's time).
+# reloads CONFIG NEW_CONFIG SCRIPT CONFIG_MS EXPECTED [KEYS]: like replays_keys, with the settings
+# replaced by NEW_CONFIG at CONFIG_MS.
+reloads() {
+    conf "$1"
+    printf "$2" > "$WORK/g2.conf"
+    { touches "$3"; [ -z "${6:-}" ] || keys "$6"
+      printf '[%6d.%06d] CONFIG %s\n' $((1000 + $4 / 1000)) $(($4 % 1000 * 1000)) "$WORK/g2.conf"
+    } | sort -s -t']' -k1,1 > "$WORK/reload.log"
+    got=$("$GESTURETOOL" replay "$WORK/g.conf" "$WORK/reload.log") || return 1
+    [ "$got" = "$(printf "$5")" ] || { printf 'got:\n%s\n' "$got"; return 1; }
+}
+check 'new settings apply from the next touch' reloads "$TAPS" "tap_ms 400\n$TAPS" \
+    '0 0=500,200\n300 -0\n500 0=500,200\n800 -0\n' 400 '800 1-finger tap key 0x1\n'
+check 'new bindings apply from the next touch' reloads "$TAPS" 'bind 1 tap key 9\n' \
+    '0 0=500,200\n50 -0\n500 0=500,200\n550 -0\n' 400 '50 1-finger tap key 0x1\n550 1-finger tap key 0x9\n'
+check 'a touch in progress when the settings change is abandoned, and the next one counts' reloads "$TAPS" "$TAPS" \
+    '0 0=500,200\n100 -0\n500 0=500,200\n550 -0\n' 50 '550 1-finger tap key 0x1\n'
+check 'a modifier held across new settings still chooses the layer, though the list is reordered' reloads \
+    "${MODS}bind ctrl 1 tap key 7\n" "mod 29 ctrl\nmod 42 shift\nbind ctrl 1 tap key 7\n" \
+    '500 0=500,200\n550 -0\n' 200 '450 1-finger tap key 0x7\n' '100 KEY_LEFTCTRL DOWN\n'
+conf 'pass 1\n'
+printf 'pass 1\n' > "$WORK/g2.conf"
+{ touches '0 0=100,200\n50 0=120,200\n70 0=140,200\n80 -0\n'; echo "[  1000.060000] CONFIG $WORK/g2.conf"; } |
+    sort -s -t']' -k1,1 > "$WORK/reload-pass.log"
+check 'new settings lift the fingers passed through and pass none of their later events' \
+    sh -c 'out=$("$1" replay "$2" "$3") && printf "%s\n" "$out" | grep -qx "60 pass EV_ABS ABS_MT_TRACKING_ID ffffffff" &&
+        [ "$(printf "%s\n" "$out" | tail -n 1)" = "60 pass EV_SYN SYN_REPORT 00000000" ]' \
+    - "$GESTURETOOL" "$WORK/g.conf" "$WORK/reload-pass.log"
+{ printf '[  1000.000000] EV_ABS ABS_MT_TRACKING_ID 00000005\n[  1000.000000] EV_ABS ABS_MT_POSITION_X 00000064\n'
+  echo "[  1000.000000] CONFIG $WORK/g2.conf"; printf '[  1000.000000] EV_SYN SYN_REPORT 00000000\n'; } > "$WORK/reload-midframe.log"
+check 'new settings between the events of a first frame keep that frame for a passthrough' \
+    sh -c '"$1" replay "$2" "$3" | grep -qx "0 pass EV_ABS ABS_MT_TRACKING_ID 00000005"' \
+    - "$GESTURETOOL" "$WORK/g.conf" "$WORK/reload-midframe.log"
+printf 'speed 3\n' > "$WORK/g2.conf"
+printf '[  1000.000000] CONFIG %s\n' "$WORK/g2.conf" > "$WORK/reload-bad.log"
+check 'replay rejects settings that a CONFIG line cannot read' \
+    sh -c '"$1" replay "$2" "$3" 2>/dev/null && exit 1 || exit 0' - "$GESTURETOOL" "$WORK/g.conf" "$WORK/reload-bad.log"
+
 # Device recordings: the finger counts must come out right, including the third finger that
 # landed 122 ms after the first. Taps are made easy here so that every touch reports its count.
 conf "tap_ms 600\nstart_mm 25\n$TAPS"

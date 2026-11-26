@@ -471,6 +471,26 @@ void tg_set_held_keys(struct tg_state *st, const uint8_t *bits, size_t nbytes)
     }
 }
 
+void tg_set_config(struct tg_state *st, int64_t t_us, const struct tg_config *cfg)
+{
+    tg_advance(st, t_us);
+    /* Part of the touch was measured with the old thresholds and bindings, so neither fits it.
+     * While idle, the buffer holds only the first frame of a touch, which is not measured yet. */
+    if (st->phase == TG_PASS) release_passthrough(st, t_us);
+    if (st->phase != TG_IDLE) {
+        st->phase = TG_DONE;
+        st->buf_len = 0;
+        st->buf_overflow = false;
+    }
+    /* mods_down is indexed by the position in cfg.mods, which the new list may order differently. */
+    uint32_t held = 0;
+    for (int i = 0; i < cfg->nmods; i++)
+        for (int j = 0; j < st->cfg.nmods; j++)
+            if ((st->mods_down >> j & 1) && st->cfg.mods[j].scancode == cfg->mods[i].scancode) held |= 1u << i;
+    st->mods_down = held;
+    st->cfg = *cfg;
+}
+
 int64_t tg_next_deadline(const struct tg_state *st)
 {
     if (st->phase == TG_GATHER) return st->t0 + MS(st->cfg.gather_ms);
