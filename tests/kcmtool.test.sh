@@ -5,14 +5,6 @@
 printf 'type ALPHA\nkey A {\n    base: bogus\n}\n' > "$WORK/rejected.kcm"
 ORIGINAL="$FIXTURES/key2-base.kcm"
 
-# fails COMMAND...: COMMAND must exit 1, kcmtool's status for a rejected map. Other statuses
-# (127 for a missing command, 2 for a usage error) do not count as the expected rejection.
-fails() {
-    "$@" >/dev/null 2>&1
-    status=$?
-    [ "$status" -eq 1 ] || { echo "expected exit 1, got $status: $*"; return 1; }
-}
-
 check 'check rejects a map the AOSP parser rejects' fails "$KCMTOOL" check "$WORK/rejected.kcm"
 check 'compare_maps fails when the second map is rejected' \
     fails compare_maps "$ORIGINAL" "$WORK/rejected.kcm" "$WORK/out"

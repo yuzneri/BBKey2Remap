@@ -71,7 +71,7 @@ generate_kl() {
     runawk -f "$BASE/klpatch.awk" "$1" "$BASE/base.kl" > "$2" || fail 'キー配置を生成できなかったため、保存しませんでした。'
     [ -s "$2" ] || fail '生成したキー配置が空のため、保存しませんでした。'
     has_nul "$2" && fail '生成したキー配置にNUL文字が含まれているため、保存しませんでした。'
-    runawk -f "$BASE/kllint.awk" "$BASE/keycodes.txt" "$2" >&2 ||
+    runawk -v original="$BASE/base.kl" -f "$BASE/kllint.awk" "$BASE/keycodes.txt" "$2" >&2 ||
         fail '生成したキー配置がAndroidの文法検査に通らなかったため、保存しませんでした。'
 }
 

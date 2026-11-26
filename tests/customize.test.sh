@@ -69,7 +69,7 @@ printf '\n# KEY2_KL 110=ESCAPE\n' >> "$DEV/vendor/usr/keylayout/stmpe.kl"
 check 'a modified live key layout without the previous module blocks installation' aborts_with 'Active modified key layout detected'
 
 fresh_device
-printf '\nled 0x00 CAPS_LOCK\n' >> "$DEV/vendor/usr/keylayout/stmpe.kl"
+printf '\nkey 200 NOT_A_KEY\n' >> "$DEV/vendor/usr/keylayout/stmpe.kl"
 check 'an original key layout that fails the grammar check blocks installation' aborts_with 'cannot be regenerated or fails the Android grammar check'
 
 fresh_device

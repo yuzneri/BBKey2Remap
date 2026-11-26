@@ -7,6 +7,8 @@ KL="$FIXTURES/key2-base.kl"
 KEYCODES="$ROOT/src/keycodes.txt"
 
 kllint() { LC_ALL=C run_awk "$1" -f "$ROOT/src/kllint.awk" "$KEYCODES" "$2"; }
+# kllint_from IMPL ORIGINAL FILE: kllint as save runs it, with the layout FILE was generated from.
+kllint_from() { LC_ALL=C run_awk "$1" -v original="$2" -f "$ROOT/src/kllint.awk" "$KEYCODES" "$3"; }
 klpatch() { run_awk "$1" -f "$ROOT/src/klpatch.awk" "$2" "$3"; }
 dump() { "$KLTOOL" dump "$1"; }
 
@@ -14,11 +16,43 @@ check 'AOSP parser accepts the device key layout' "$KLTOOL" check "$KL"
 for impl in busybox gawk mawk; do
     check "$impl kllint accepts the device key layout" kllint "$impl" "$KL"
 done
-# Generic.kl also has axis and led lines, which kllint deliberately rejects; its key lines are
-# a larger real-world corpus.
+# Generic.kl also has axis, led and sensor lines, which kllint rejects unless they are copied from
+# the original layout; its key lines are a larger real-world corpus.
 grep -E '^[[:space:]]*(#|key[[:space:]]|$)' "$AOSP_KEYBOARDS/Generic.kl" > "$WORK/generic-keys.kl"
 check 'AOSP parser accepts the key lines of Generic.kl' "$KLTOOL" check "$WORK/generic-keys.kl"
 check 'kllint accepts the key lines of Generic.kl' kllint busybox "$WORK/generic-keys.kl"
+
+lineage22_kl > "$WORK/lineage22.kl"
+check 'the 22.2-shaped layout has axis, led and sensor lines' sh -c '
+    for kw in axis led sensor; do grep -q "^$kw " "$1" || exit 1; done' _ "$WORK/lineage22.kl"
+check 'AOSP parser accepts the 22.2-shaped layout' "$KLTOOL" check "$WORK/lineage22.kl"
+check 'kllint without the original rejects its axis line' fails kllint busybox "$WORK/lineage22.kl"
+for impl in busybox gawk mawk; do
+    check "$impl kllint accepts the 22.2-shaped layout copied from itself" \
+        kllint_from "$impl" "$WORK/lineage22.kl" "$WORK/lineage22.kl"
+done
+sed '0,/^axis /s/^axis \(0x[0-9a-f]*\) .*/axis \1 RUDDER/' "$WORK/lineage22.kl" > "$WORK/axis-changed.kl"
+axis_line_not_in_original_rejected() {
+    ! cmp -s "$WORK/lineage22.kl" "$WORK/axis-changed.kl" &&
+        fails kllint_from busybox "$WORK/lineage22.kl" "$WORK/axis-changed.kl"
+}
+check 'kllint rejects an axis line the original does not have' axis_line_not_in_original_rejected
+sed 's/$/\r/' "$WORK/lineage22.kl" > "$WORK/lineage22-crlf.kl"
+check 'kllint matches copied lines of a CRLF original in an LF layout' \
+    kllint_from busybox "$WORK/lineage22-crlf.kl" "$WORK/lineage22.kl"
+check 'kllint matches copied lines of an LF original in a CRLF layout' \
+    kllint_from busybox "$WORK/lineage22.kl" "$WORK/lineage22-crlf.kl"
+{ cat "$WORK/lineage22.kl"; grep -m 1 '^axis ' "$WORK/lineage22.kl"; } > "$WORK/axis-twice.kl"
+check 'AOSP parser rejects a repeated axis line' fails "$KLTOOL" check "$WORK/axis-twice.kl"
+for impl in busybox gawk mawk; do
+    check "$impl kllint accepts a copied line no more often than the original has it" \
+        fails kllint_from "$impl" "$WORK/lineage22.kl" "$WORK/axis-twice.kl"
+done
+unreadable_original_rejected() {
+    out=$(kllint_from busybox "$WORK/missing.kl" "$KL" 2>&1)
+    [ $? -eq 1 ] && printf '%s\n' "$out" | grep -q 'cannot read'
+}
+check 'kllint rejects when the original cannot be read' unreadable_original_rejected
 
 # VERDICT|text: what AOSP does, or "stricter" where kllint deliberately rejects what AOSP accepts.
 cat > "$WORK/cases" <<'CASES'
@@ -123,7 +157,7 @@ roles_become() {
     # shellcheck disable=SC2086
     write_config "$WORK/roles" $cfg &&
         klpatch busybox "$WORK/roles" "$WORK/base.kl" > "$WORK/new.kl" &&
-        "$KLTOOL" check "$WORK/new.kl" >/dev/null && kllint busybox "$WORK/new.kl" &&
+        "$KLTOOL" check "$WORK/new.kl" >/dev/null && kllint_from busybox "$WORK/base.kl" "$WORK/new.kl" &&
         dump "$WORK/base.kl" > "$WORK/before" && dump "$WORK/new.kl" > "$WORK/after" || return 1
     expected=$(for a in "$@"; do echo "${a%%=*} ${a#*=}"; done | sort)
     actual=$(diff "$WORK/before" "$WORK/after" | sed -n 's/^> \([0-9]*\) \([A-Z0-9_]*\) .*/\1 \2/p' | sort)
@@ -134,6 +168,8 @@ cp "$KL" "$WORK/base.kl"
 check 'Speed key can become Escape' roles_become 110=ESCAPE
 check 'SYM can become left Ctrl while Speed becomes SYM' roles_become 100=CTRL_LEFT 110=SYM
 check 'all four modifier keys can change at once' roles_become 42=ALT_LEFT 56=SHIFT_LEFT 100=META_LEFT 110=TAB
+cp "$WORK/lineage22.kl" "$WORK/base.kl"
+check 'modifier roles change in the 22.2-shaped layout' roles_become 110=ESCAPE 100=CTRL_LEFT
 sed 's/^key 42 .*/key 42    SHIFT_LEFT WAKE # left shift/' "$KL" > "$WORK/base.kl"
 check 'a changed line keeps its flags and comment' sh -c '
     printf "# config\nkl:42=CAPS_LOCK\n" > "$1/c" && busybox awk -f "$2" "$1/c" "$1/base.kl" | grep -qx "key 42    CAPS_LOCK WAKE # left shift"' _ "$WORK" "$ROOT/src/klpatch.awk"

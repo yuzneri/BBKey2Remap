@@ -37,6 +37,15 @@ finish() {
 
 # Helpers below take positional parameters only, so they never overwrite a caller's variables.
 
+# fails COMMAND...: COMMAND must exit 1, the status of kcmtool, kltool and the lint scripts for a
+# rejected file. Other statuses (127 for a missing command, 2 for a usage error) do not count as
+# the expected rejection.
+fails() {
+    "$@" >/dev/null 2>&1
+    status=$?
+    [ "$status" -eq 1 ] || { echo "expected exit 1, got $status: $*"; return 1; }
+}
+
 # write_config FILE ASSIGNMENT...: writes a generator config in the format remap.sh produces.
 write_config() {
     exec 3> "$1"; shift
@@ -108,11 +117,21 @@ SH
     chmod +x "$1/bin/"*
 }
 
+# lineage22_kl > OUT: a key layout of the shape of LineageOS 22.2's stmpe.kl: the KEY2's key lines
+# (the fixture), then AOSP's Generic.kl, axis, led and sensor lines included, minus the scan codes
+# the KEY2 lines already map.
+lineage22_kl() {
+    awk 'NR == FNR { if ($1 == "key") have[$2] = 1; print; next }
+        FNR == 1 { print "" }
+        !($1 == "key" && $2 in have)' "$FIXTURES/key2-base.kl" "${AOSP_KEYBOARDS:?run tests through tests/run.sh}/Generic.kl"
+}
+
 # module_files DIR: the module as Magisk extracts it from the ZIP (src/ without generated data).
 # bin/touchgestured, an arm64 binary in the ZIP, is stood in for by a script: "check" runs
 # gesturetool's check of the same settings file, "thresholds" its table, and starting the daemon records its pid and
 # arguments in DIR/daemon.calls and waits for SIGTERM (as a shell, so its command line still
-# names bin/touchgestured).
+# names bin/touchgestured). SIGHUP appends "PID reload" to DIR/daemon.calls, or, while
+# DIR/reload.fails exists, makes it exit as touchgestured does when it cannot read the settings.
 module_files() {
     mkdir -p "$1/bin" && cp -R "$ROOT/src/." "$1/" || return 1
     cat > "$1/bin/touchgestured" <<STUB

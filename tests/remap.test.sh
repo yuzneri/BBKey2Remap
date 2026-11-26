@@ -126,6 +126,15 @@ save_writes_key_layout() {
 }
 check 'save writes a key layout AOSP accepts with the new modifier roles, readable back' save_writes_key_layout
 
+lineage22_kl > "$MOD/base.kl"
+save_keeps_lineage22_lines() {
+    out=$(remap save kl:110=ESCAPE) || { echo "$out"; return 1; }
+    "$KLTOOL" check "$DST_KL" >/dev/null && "$KLTOOL" dump "$DST_KL" | grep -qx '110 ESCAPE 0x0' &&
+        [ "$(grep -vE '^key 110 ' "$DST_KL" | grep -v '^# KEY2_KL ')" = "$(grep -vE '^key 110 ' "$MOD/base.kl")" ]
+}
+check 'save changes a role in a 22.2 key layout and copies its axis, led and sensor lines' save_keeps_lineage22_lines
+cp "$FIXTURES/key2-base.kl" "$MOD/base.kl"
+
 save_without_roles_removes_layout() {
     remap save sym:H=R_DPAD_LEFT >/dev/null && [ ! -e "$DST_KL" ] && [ ! -e "${DST_KL%/*}" ] && [ -s "$DST" ]
 }
@@ -141,10 +150,10 @@ check 'modifier roles need the original key layout of the installation' refused 
 check 'character map edits still work without an original key layout' without_original_layout sh -c 'sh "$1" save sym:K=R_DPAD_UP >/dev/null' _ "$MOD/remap.sh"
 broken_layout() { cp "$MOD/base.kl" "$WORK/base.kl.saved"; printf "$1" > "$MOD/base.kl"; shift; "$@"; status=$?; cp "$WORK/base.kl.saved" "$MOD/base.kl"; return "$status"; }
 check 'an original key layout with NUL is refused' refused 'NUL文字が含まれている' broken_layout 'key 110 CTRL_LEFT\000\n' remap save kl:110=ESCAPE
-check 'a generated key layout failing the grammar check is refused' refused 'キー配置がAndroidの文法検査に通らなかった' broken_layout 'key 110 CTRL_LEFT\nled 0 CAPS_LOCK\n' remap save kl:110=ESCAPE
+check 'a generated key layout failing the grammar check is refused' refused 'キー配置がAndroidの文法検査に通らなかった' broken_layout 'key 110 CTRL_LEFT\nkey 200 NOT_A_KEY\n' remap save kl:110=ESCAPE
 
 check 'verify accepts the stored originals' sh -c '[ "$(sh "$1" verify)" = OK ]' _ "$MOD/remap.sh"
-check 'verify rejects an original key layout failing the grammar check' refused '文法検査に通らなかった' broken_layout 'key 110 CTRL_LEFT\nled 0 CAPS_LOCK\n' remap verify
+check 'verify rejects an original key layout failing the grammar check' refused '文法検査に通らなかった' broken_layout 'key 110 CTRL_LEFT\nkey 200 NOT_A_KEY\n' remap verify
 
 status_reports() {
     # A saved modifier role makes the stored key layout differ from the live one until reboot.
