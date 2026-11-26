@@ -64,7 +64,7 @@ summary{cursor:pointer;font-size:14px;padding:4px 0}
 .key span{font-size:17px;line-height:1.2;max-width:100%;overflow:hidden;white-space:nowrap}
 .key.replace span{font-size:13px;font-weight:600;color:var(--accent-text)}
 .key.none span,.key.undefined span{color:#888}
-.key.changed{background:var(--soft)}
+.key.changed,.gbtn.changed{background:var(--soft)}
 /* An assignment is marked by a dot, on keys and gestures alike. */
 .key.assigned::after,.gbtn.assigned::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--warn)}
 .key.selected{outline:3px solid #4789df;outline-offset:-1px}

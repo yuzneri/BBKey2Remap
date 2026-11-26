@@ -567,7 +567,8 @@ function renderFingers() {
       // A tall palette would push the heading, which names the gesture being edited, out of sight.
       $('gestureTarget').scrollIntoView({ block: 'nearest' });
     },
-      'gbtn' + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
+      // Changed, as on keys, means it no longer does what the ROM does, which is nothing.
+      'gbtn' + (value ? ' changed' : '') + (own(map, id) ? ' assigned' : '') + (touchGesture === g.id ? ' active' : ''));
     b.setAttribute('aria-label', KCM.gestureName(id) + '：' + (own(map, id) ? KCM.touchKeyText(map[id]) : unboundText(g.id)));
     b.setAttribute('aria-pressed', String(touchGesture === g.id));
     // The group heading names the kind, so a button shows only its direction.
