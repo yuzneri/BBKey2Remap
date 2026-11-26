@@ -75,7 +75,8 @@ expect_eval() {
 
 # fake_device DIR: a fake device root for the module scripts (KEY2REMAP_ROOT=DIR). It holds the
 # stock keymaps, Magisk's busybox (host busybox), and stub commands in DIR/bin to put first in
-# PATH: dumpsys prints DIR/dumpsys-input.txt, getprop answers as the KEY2 on Android 16,
+# PATH: dumpsys prints DIR/dumpsys-input.txt, getprop answers as the KEY2 on Android 16 (or the
+# version in DIR/android.version),
 # ls -Z prints the label in DIR/label, chcon logs to DIR/chcon.log and exits with DIR/chcon.status.
 fake_device() {
     mkdir -p "$1/vendor/usr/keychars" "$1/vendor/usr/keylayout" "$1/data/adb/magisk" \
@@ -97,7 +98,10 @@ TXT
 SH
     cat > "$1/bin/getprop" <<'SH'
 #!/bin/sh
-case "$1" in ro.product.model) echo 'BlackBerry KEY2';; ro.build.version.release) echo 16;; esac
+case "$1" in
+    ro.product.model) cat "$KEY2REMAP_ROOT/product.model" 2>/dev/null || echo 'BlackBerry KEY2';;
+    ro.build.version.release) cat "$KEY2REMAP_ROOT/android.version" 2>/dev/null || echo 16;;
+esac
 SH
     cat > "$1/bin/ls" <<'SH'
 #!/bin/sh

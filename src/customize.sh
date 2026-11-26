@@ -1,8 +1,10 @@
 # Sourced by the Magisk app's module installer, which provides abort, ui_print, set_perm,
 # MODPATH and BOOTMODE. The module files are already extracted into MODPATH.
 [ "$BOOTMODE" = true ] || abort "Use Magisk app."
-[ "$(getprop ro.product.model)" = "BlackBerry KEY2" ] || abort "KEY2 only."
-[ "$(getprop ro.build.version.release)" = 16 ] || abort "Android 16 only."
+# LineageOS 22.2 (zkrab) reports the stock ROM's product values (model KEY2, device bbf100), and
+# 23.2 reports the device tree's (model BlackBerry KEY2).
+case "$(getprop ro.product.model)" in "BlackBerry KEY2"|KEY2) ;; *) abort "KEY2 only." ;; esac
+case "$(getprop ro.build.version.release)" in 15|16) ;; *) abort "Android 15 or 16 only." ;; esac
 # Prefix for absolute system paths: empty on the device, a fake root in tests/customize.test.sh.
 R=${KEY2REMAP_ROOT:-}
 OLD=$R/data/adb/modules/key2_navigation

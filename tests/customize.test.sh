@@ -37,6 +37,19 @@ fresh_device; check 'a fresh install stores both originals and installs no key l
 daemon_is_executable() { installed_ok && grep -qx "set_perm $NEW/bin/touchgestured 0 0 0755" "$WORK/install.log"; }
 fresh_device; check 'the install makes the gesture daemon executable' daemon_is_executable
 
+lineage22_install_keeps_original() {
+    echo 15 > "$DEV/android.version" && echo KEY2 > "$DEV/product.model" &&
+        lineage22_kl > "$DEV/vendor/usr/keylayout/stmpe.kl" &&
+        installed_ok && cmp "$NEW/base.kl" "$DEV/vendor/usr/keylayout/stmpe.kl"
+}
+fresh_device; check 'LineageOS 22.2 (Android 15, model KEY2, key layout with axis, led, sensor lines) installs' lineage22_install_keeps_original
+fresh_device; echo 'KEY2 LE' > "$DEV/product.model"
+check 'another model blocks installation' aborts_with 'KEY2 only.'
+fresh_device; echo 14 > "$DEV/android.version"
+check 'Android 14 blocks installation' aborts_with 'Android 15 or 16 only.'
+fresh_device; echo 17 > "$DEV/android.version"
+check 'Android 17 blocks installation' aborts_with 'Android 15 or 16 only.'
+
 fresh_device
 sed -i '/SYM/d' "$DEV/vendor/usr/keylayout/stmpe.kl"
 check 'a key layout without SYM does not block installation' installed_ok

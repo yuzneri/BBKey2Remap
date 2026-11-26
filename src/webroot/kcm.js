@@ -1,7 +1,7 @@
 'use strict';
 /*
  * Pure logic of the WebUI: assignment validation, reading a KCM and evaluating key events with
- * Android 16's rules (frameworks/native libs/input/KeyCharacterMap.cpp).
+ * Android 16's rules (frameworks/native libs/input/KeyCharacterMap.cpp, the same in Android 15).
  * Loaded as a classic script (global KCM) by index.html and with require() by the Node tests.
  * A classic script, not an ES module, so loading does not depend on the MIME type WebUI X
  * serves for module scripts.

@@ -1,5 +1,5 @@
 # Checks a base-format KCM against the grammar of the Android 16 AOSP parser
-# (KeyCharacterMap::Parser, frameworks/native android-16.0.0_r1).
+# (KeyCharacterMap::Parser, frameworks/native android-16.0.0_r1, unchanged in LineageOS 22.2 / Android 15).
 #   awk -f lint.awk /path/keycodes.txt /path/FILE.kcm   -> exit 0 if accepted, else exit 1 with a reason
 # Callers must pass paths starting with "/" (awk reads an operand like "a=b" as an assignment) and
 # must reject files containing NUL first: busybox awk ends a record at NUL, whereas the AOSP
